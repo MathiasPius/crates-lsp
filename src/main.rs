@@ -1,6 +1,7 @@
 use parse::{DependencyVersion, ManifestTracker};
 use registry::api::CrateApi;
 use registry::CrateRegistry;
+use semver::Version;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
@@ -15,6 +16,20 @@ struct Backend {
     registry: CrateApi,
 }
 
+fn diagnostic_from_version(range: Range, version: &Version) -> Diagnostic {
+    Diagnostic {
+        range,
+        severity: Some(DiagnosticSeverity::INFORMATION),
+        code: None,
+        code_description: None,
+        source: Some(String::from("crates-lsp")),
+        message: version.to_string(),
+        related_information: None,
+        tags: None,
+        data: None,
+    }
+}
+
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
     async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
@@ -27,7 +42,11 @@ impl LanguageServer for Backend {
                 )),
                 completion_provider: Some(CompletionOptions {
                     resolve_provider: Some(false),
-                    trigger_characters: Some(vec!["=".to_string()]),
+                    trigger_characters: Some(vec![
+                        "=".to_string(),
+                        ".".to_string(),
+                        "\"".to_string(),
+                    ]),
                     work_done_progress_options: Default::default(),
                     all_commit_characters: None,
                     ..Default::default()
@@ -78,25 +97,23 @@ impl LanguageServer for Backend {
             .await;
 
         if let Some(content) = params.content_changes.first() {
+            // Fetch the parsed manifest of the file in question.
             let packages = self
                 .manifests
                 .update_from_source(params.text_document.uri.clone(), &content.text)
                 .await;
 
+            // Retrieve just the package names, so we can fetch the latest
+            // versions via the crate registry.
             let dependency_names: Vec<&str> = packages
                 .iter()
                 .map(|dependency| dependency.name.as_str())
                 .collect();
 
+            // Get the newest version of each crate that appears in the manifest.
             let newest_packages = self.registry.fetch_versions(&dependency_names).await;
 
-            self.client
-                .log_message(
-                    MessageType::WARNING,
-                    format!("{packages:#?}\n{newest_packages:#?}"),
-                )
-                .await;
-
+            // Produce diagnostic hints for each crate where we might be helpful.
             let diagnostics: Vec<_> = packages
                 .into_iter()
                 .filter_map(|dependency| {
@@ -105,46 +122,23 @@ impl LanguageServer for Backend {
                             match version {
                                 DependencyVersion::Complete { range, version } => {
                                     if !version.matches(newest_version) {
-                                        Some(Diagnostic {
+                                        return Some(diagnostic_from_version(
                                             range,
-                                            severity: Some(DiagnosticSeverity::INFORMATION),
-                                            code: None,
-                                            code_description: None,
-                                            source: Some(String::from("crates")),
-                                            message: newest_version.to_string(),
-                                            related_information: None,
-                                            tags: None,
-                                            data: None,
-                                        })
-                                    } else {
-                                        None
+                                            newest_version,
+                                        ));
                                     }
                                 }
 
-                                DependencyVersion::Partial { range, .. } => Some(Diagnostic {
-                                    range,
-                                    severity: Some(DiagnosticSeverity::INFORMATION),
-                                    code: None,
-                                    code_description: None,
-                                    source: Some(String::from("crates")),
-                                    message: newest_version.to_string(),
-                                    related_information: None,
-                                    tags: None,
-                                    data: None,
-                                }),
+                                DependencyVersion::Partial { range, .. } => {
+                                    return Some(diagnostic_from_version(range, newest_version));
+                                }
                             }
-                        } else {
-                            None
                         }
-                    } else {
-                        None
                     }
+
+                    None
                 })
                 .collect();
-
-            self.client
-                .log_message(MessageType::WARNING, format!("{diagnostics:#?}"))
-                .await;
 
             self.client
                 .publish_diagnostics(
@@ -153,28 +147,6 @@ impl LanguageServer for Backend {
                     Some(params.text_document.version),
                 )
                 .await;
-            /*
-            let dependencies = detect_versions(&content.text);
-
-            self.client
-                .publish_diagnostics(
-                    params.text_document.uri.clone(),
-                    dependencies
-                        .iter()
-                        .filter_map(|dependency| {
-                            if let Some(DependencyVersion::Complete { range, .. }) =
-                                dependency.version
-                            {
-                                Some(Diagnostic::new_simple(range, "Hello".to_string()))
-                            } else {
-                                None
-                            }
-                        })
-                        .collect(),
-                    Some(params.text_document.version),
-                )
-                .await;
-            */
         }
     }
 
@@ -196,11 +168,46 @@ impl LanguageServer for Backend {
             .await;
     }
 
-    async fn completion(&self, _: CompletionParams) -> Result<Option<CompletionResponse>> {
-        Ok(Some(CompletionResponse::Array(vec![
-            CompletionItem::new_simple("Hello".to_string(), "Some detail".to_string()),
-            CompletionItem::new_simple("Bye".to_string(), "More detail".to_string()),
-        ])))
+    async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
+        let cursor = params.text_document_position.position;
+
+        let Some(dependencies) = self.manifests.get(&params.text_document_position.text_document.uri).await else {
+            return Ok(None)
+        };
+
+        let Some(dependency) = dependencies.into_iter().find(|dependency| {
+            dependency.version.as_ref().is_some_and(|version| {
+                version.range().start.line == cursor.line && version.range().start.character <= cursor.character && version.range().end.character >= cursor.character
+            })
+        }) else {
+            return Ok(None)
+        };
+
+        let packages = self.registry.fetch_versions(&[&dependency.name]).await;
+
+        if let Some(Some(newest_version)) = packages.get(&dependency.name) {
+            let specified_version = dependency.version.as_ref().unwrap().to_string();
+            let specified_version = &specified_version[0..specified_version.len() - 1];
+
+            let newest_version = newest_version.to_string();
+
+            let truncated_version = newest_version
+                .as_str()
+                .strip_prefix(
+                    specified_version.trim_start_matches(&['<', '>', '=', '^', '~'] as &[_]),
+                )
+                .unwrap_or(&newest_version)
+                .to_string();
+
+            Ok(Some(CompletionResponse::Array(vec![CompletionItem {
+                insert_text: Some(truncated_version),
+                label: newest_version,
+
+                ..CompletionItem::default()
+            }])))
+        } else {
+            Ok(None)
+        }
     }
 
     async fn inlay_hint(

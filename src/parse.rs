@@ -27,6 +27,13 @@ pub enum DependencyVersion {
 }
 
 impl DependencyVersion {
+    pub fn range(&self) -> Range {
+        match self {
+            DependencyVersion::Partial { range, .. }
+            | DependencyVersion::Complete { range, .. } => *range,
+        }
+    }
+
     fn range_mut(&mut self) -> &mut Range {
         match self {
             DependencyVersion::Partial { range, .. }
@@ -297,7 +304,7 @@ impl ManifestTracker {
         packages
     }
 
-    async fn get(&self, url: &Url) -> Option<Vec<Dependency>> {
+    pub async fn get(&self, url: &Url) -> Option<Vec<Dependency>> {
         let dependencies = {
             let lock = self.manifests.read().await;
             lock.get(url).cloned()
