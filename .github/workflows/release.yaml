@@ -8,12 +8,11 @@ on:
     branches:
       - main
 
-permissions:
-  contents: write
-
 jobs:
   lint:
     name: Linting (rustfmt + clippy)
+    permissions:
+      checks: write
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -35,11 +34,10 @@ jobs:
           command: fmt
           args: --all -- --check
       
-      - name: Run clippy
-        uses: actions-rs/clippy-check@v1
+      - uses: giraffate/clippy-action@v1
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all-features
+          reporter: 'github-pr-review'
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
   test:
     name: Test
@@ -64,6 +62,8 @@ jobs:
   tag:
     name: Tag & Publish
     needs: [lint, test]
+    permissions:
+      contents: write
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
@@ -86,6 +86,8 @@ jobs:
           
   create-release:
     needs: tag
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -95,6 +97,8 @@ jobs:
 
   upload-assets:
     needs: create-release
+    permissions:
+      contents: write
     strategy:
       matrix:
         include:
