@@ -66,6 +66,8 @@ jobs:
       contents: write
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.crate-version.outputs.version }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
@@ -96,7 +98,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
   upload-assets:
-    needs: create-release
+    needs: [tag, create-release]
     permissions:
       contents: write
     strategy:
@@ -119,10 +121,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: taiki-e/upload-rust-binary-action@v1
         with:
-          # (required) Comma-separated list of binary names (non-extension portion of filename) to build and upload.
-          # Note that glob pattern is not supported yet.
           bin: crates-lsp
-          # (optional) Target triple, default is host triple.
           target: ${{ matrix.target }}
-          # (required) GitHub token for uploading assets to GitHub Releases.
           token: ${{ secrets.GITHUB_TOKEN }}
+          ref: "refs/tags/v${{needs.tag.outputs.tag}}"
