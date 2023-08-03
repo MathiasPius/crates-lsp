@@ -15,7 +15,6 @@ jobs:
       - uses: actions/checkout@v3
       - uses: taiki-e/create-gh-release-action@v1
         with:
-          # (required) GitHub token for creating GitHub Releases.
           token: ${{ secrets.GITHUB_TOKEN }}
 
   upload-assets:
@@ -31,9 +30,10 @@ jobs:
             os: ubuntu-latest
           - target: x86_64-apple-darwin
             os: macos-latest
-          # Universal macOS binary is supported as universal-apple-darwin.
           - target: universal-apple-darwin
             os: macos-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3

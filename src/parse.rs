@@ -223,12 +223,12 @@ impl<'a> Line<'a> {
             } => Some(Dependency {
                 name: name.to_string(),
                 version: version.map(|version| DependencyVersion::Partial {
-                        version: version[1..].trim().to_string(),
-                        range: Range::new(
-                            Position::new(0, start as u32),
-                            Position::new(0, line.len() as u32),
-                        ),
-                    }),
+                    version: version[1..].trim().to_string(),
+                    range: Range::new(
+                        Position::new(0, start as u32),
+                        Position::new(0, line.len() as u32),
+                    ),
+                }),
             }),
             Name { name, .. } | Struct { name, .. } => Some(Dependency {
                 name: name.to_string(),
