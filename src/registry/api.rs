@@ -89,7 +89,7 @@ impl Default for CrateApi {
 #[tower_lsp::async_trait]
 impl CrateRegistry for CrateApi {
     async fn fetch_versions(&self, crate_names: &[&str]) -> HashMap<String, Option<Version>> {
-        let crate_names: HashSet<&str> = HashSet::from_iter(crate_names.into_iter().map(|c| *c));
+        let crate_names: HashSet<&str> = HashSet::from_iter(crate_names.iter().copied());
 
         let values = { self.crates.read().await.clone() };
         let known_crates = HashSet::from_iter(values.keys().map(|key| key.as_str()));

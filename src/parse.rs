@@ -45,7 +45,7 @@ impl DependencyVersion {
 impl Display for DependencyVersion {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DependencyVersion::Partial { version, .. } => f.write_str(&version),
+            DependencyVersion::Partial { version, .. } => f.write_str(version),
             DependencyVersion::Complete { version, .. } => write!(f, "{}", version),
         }
     }
@@ -134,14 +134,12 @@ impl<'a> Line<'a> {
                         } else {
                             Struct { name, remainder }
                         }
+                    } else if let Some(remainder) = remainder.strip_prefix(c) {
+                        Struct { name, remainder }
                     } else {
-                        if let Some(remainder) = remainder.strip_prefix(c) {
-                            Struct { name, remainder }
-                        } else {
-                            Struct {
-                                name,
-                                remainder: "version",
-                            }
+                        Struct {
+                            name,
+                            remainder: "version",
                         }
                     }
                 }
@@ -224,17 +222,13 @@ impl<'a> Line<'a> {
                 start,
             } => Some(Dependency {
                 name: name.to_string(),
-                version: if let Some(version) = version {
-                    Some(DependencyVersion::Partial {
+                version: version.map(|version| DependencyVersion::Partial {
                         version: version[1..].trim().to_string(),
                         range: Range::new(
                             Position::new(0, start as u32),
                             Position::new(0, line.len() as u32),
                         ),
-                    })
-                } else {
-                    None
-                },
+                    }),
             }),
             Name { name, .. } | Struct { name, .. } => Some(Dependency {
                 name: name.to_string(),
