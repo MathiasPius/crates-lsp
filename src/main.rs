@@ -1,24 +1,15 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-
-use detect::{detect_versions, Dependency};
-use tokio::sync::RwLock;
+use parse::ManifestTracker;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
-mod check;
-mod detect;
-
-#[derive(Debug, Clone)]
-struct VersionTracker {
-    pub inner: Arc<RwLock<HashMap<Url, Vec<(usize, Dependency)>>>>,
-}
+mod parse;
+mod registry;
 
 #[derive(Debug)]
 struct Backend {
     client: Client,
-    versions: VersionTracker,
+    manifests: ManifestTracker,
 }
 
 #[tower_lsp::async_trait]
@@ -65,34 +56,6 @@ impl LanguageServer for Backend {
         Ok(())
     }
 
-    /*
-    async fn did_change_workspace_folders(&self, _: DidChangeWorkspaceFoldersParams) {
-        self.client
-            .log_message(MessageType::INFO, "workspace folders changed!")
-            .await;
-    }
-
-    async fn did_change_configuration(&self, _: DidChangeConfigurationParams) {
-        self.client
-            .log_message(MessageType::INFO, "configuration changed!")
-            .await;
-    }
-
-    async fn execute_command(&self, _: ExecuteCommandParams) -> Result<Option<Value>> {
-        self.client
-            .log_message(MessageType::INFO, "command executed!")
-            .await;
-
-        match self.client.apply_edit(WorkspaceEdit::default()).await {
-            Ok(res) if res.applied => self.client.log_message(MessageType::INFO, "applied").await,
-            Ok(_) => self.client.log_message(MessageType::INFO, "rejected").await,
-            Err(err) => self.client.log_message(MessageType::ERROR, err).await,
-        }
-
-        Ok(None)
-    }
-    */
-
     async fn did_change_watched_files(&self, _: DidChangeWatchedFilesParams) {
         self.client
             .log_message(MessageType::INFO, "watched files have changed!")
@@ -111,13 +74,32 @@ impl LanguageServer for Backend {
             .await;
 
         if let Some(content) = params.content_changes.first() {
+            self.manifests
+                .update_from_source(params.text_document.uri, &content.text)
+                .await;
+
+            /*
             let dependencies = detect_versions(&content.text);
 
-            self.versions
-                .inner
-                .write()
-                .await
-                .insert(params.text_document.uri, dependencies);
+            self.client
+                .publish_diagnostics(
+                    params.text_document.uri.clone(),
+                    dependencies
+                        .iter()
+                        .filter_map(|dependency| {
+                            if let Some(DependencyVersion::Complete { range, .. }) =
+                                dependency.version
+                            {
+                                Some(Diagnostic::new_simple(range, "Hello".to_string()))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect(),
+                    Some(params.text_document.version),
+                )
+                .await;
+            */
         }
     }
 
@@ -126,13 +108,11 @@ impl LanguageServer for Backend {
             .log_message(MessageType::INFO, "file saved!")
             .await;
 
-        let dependencies = detect_versions(params.text.as_deref().unwrap_or_default());
-
-        self.versions
-            .inner
-            .write()
-            .await
-            .insert(params.text_document.uri, dependencies);
+        if let Some(text) = params.text.as_deref() {
+            self.manifests
+                .update_from_source(params.text_document.uri, text)
+                .await;
+        }
     }
 
     async fn did_close(&self, _: DidCloseTextDocumentParams) {
@@ -148,6 +128,13 @@ impl LanguageServer for Backend {
         ])))
     }
 
+    async fn inlay_hint(
+        &self,
+        _: tower_lsp::lsp_types::InlayHintParams,
+    ) -> Result<Option<Vec<InlayHint>>> {
+        Ok(Some(vec![]))
+    }
+    /*
     async fn inlay_hint(
         &self,
         params: tower_lsp::lsp_types::InlayHintParams,
@@ -180,7 +167,7 @@ impl LanguageServer for Backend {
         Ok(Some(
             versions
                 .iter()
-                .filter_map(|(line, dependency)| {
+                .filter_map(|dependency| {
                     let Some(ref version) = dependency.version else {
                         return None;
                     };
@@ -192,7 +179,7 @@ impl LanguageServer for Backend {
                         padding_left: None,
                         padding_right: None,
                         data: None,
-                        position: Position::new(*line as u32, version.end() as u32),
+                        position: version.range().end,
                         label: InlayHintLabel::LabelParts(vec![InlayHintLabelPart {
                             value: version.to_string(),
                             tooltip: None,
@@ -209,54 +196,36 @@ impl LanguageServer for Backend {
                 })
                 .collect(),
         ))
-
-        /*
-        let inlay_hint_list = hashmap
-            .into_iter()
-            .map(|(k, v)| {
-                (
-                    k.start,
-                    k.end,
-                    match v {
-                        nrs_language_server::chumsky::Value::Null => "null".to_string(),
-                        nrs_language_server::chumsky::Value::Bool(_) => "bool".to_string(),
-                        nrs_language_server::chumsky::Value::Num(_) => "number".to_string(),
-                        nrs_language_server::chumsky::Value::Str(_) => "string".to_string(),
-                        nrs_language_server::chumsky::Value::List(_) => "[]".to_string(),
-                        nrs_language_server::chumsky::Value::Func(_) => v.to_string(),
-                    },
-                )
-            })
-            .filter_map(|item| {
-                // let start_position = offset_to_position(item.0, document)?;
-                let end_position = offset_to_position(item.1, &document)?;
-                let inlay_hint = InlayHint {
-                    text_edits: None,
-                    tooltip: None,
-                    kind: Some(InlayHintKind::TYPE),
-                    padding_left: None,
-                    padding_right: None,
-                    data: None,
-                    position: end_position,
-                    label: InlayHintLabel::LabelParts(vec![InlayHintLabelPart {
-                        value: item.2,
-                        tooltip: None,
-                        location: Some(Location {
-                            uri: params.text_document.uri.clone(),
-                            range: Range {
-                                start: Position::new(0, 4),
-                                end: Position::new(0, 5),
-                            },
-                        }),
-                        command: None,
-                    }]),
-                };
-                Some(inlay_hint)
-            })
-            .collect::<Vec<_>>();
-
-        */
     }
+    */
+
+    /*
+    async fn did_change_workspace_folders(&self, _: DidChangeWorkspaceFoldersParams) {
+        self.client
+            .log_message(MessageType::INFO, "workspace folders changed!")
+            .await;
+    }
+
+    async fn did_change_configuration(&self, _: DidChangeConfigurationParams) {
+        self.client
+            .log_message(MessageType::INFO, "configuration changed!")
+            .await;
+    }
+
+    async fn execute_command(&self, _: ExecuteCommandParams) -> Result<Option<Value>> {
+        self.client
+            .log_message(MessageType::INFO, "command executed!")
+            .await;
+
+        match self.client.apply_edit(WorkspaceEdit::default()).await {
+            Ok(res) if res.applied => self.client.log_message(MessageType::INFO, "applied").await,
+            Ok(_) => self.client.log_message(MessageType::INFO, "rejected").await,
+            Err(err) => self.client.log_message(MessageType::ERROR, err).await,
+        }
+
+        Ok(None)
+    }
+    */
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -267,9 +236,7 @@ async fn main() {
 
     let (service, socket) = LspService::new(|client| Backend {
         client,
-        versions: VersionTracker {
-            inner: Arc::new(RwLock::new(HashMap::new())),
-        },
+        manifests: ManifestTracker::default(),
     });
     Server::new(stdin, stdout, socket).serve(service).await;
 }

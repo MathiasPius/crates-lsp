@@ -1,12 +1,23 @@
-use std::fmt::Display;
+use std::{collections::HashMap, fmt::Display, sync::Arc};
 
 use semver::VersionReq;
-use tower_lsp::lsp_types::{Position, Range};
+use tokio::sync::RwLock;
+use tower_lsp::lsp_types::{Position, Range, Url};
 
 #[derive(Debug, Clone)]
 pub struct Dependency {
     pub name: String,
     pub version: Option<DependencyVersion>,
+}
+
+impl Display for Dependency {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(version) = &self.version {
+            write!(f, "{} = \"{}\"", self.name, version)
+        } else {
+            write!(f, "{} = \"?\"", self.name)
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -16,14 +27,7 @@ pub enum DependencyVersion {
 }
 
 impl DependencyVersion {
-    pub fn range(&self) -> Range {
-        match self {
-            DependencyVersion::Partial { range, .. }
-            | DependencyVersion::Complete { range, .. } => *range,
-        }
-    }
-
-    pub fn range_mut(&mut self) -> &mut Range {
+    fn range_mut(&mut self) -> &mut Range {
         match self {
             DependencyVersion::Partial { range, .. }
             | DependencyVersion::Complete { range, .. } => range,
@@ -244,53 +248,74 @@ impl<'a> Line<'a> {
     }
 }
 
-pub fn detect_versions(source: &str) -> Vec<(usize, Dependency)> {
-    use DocumentState::*;
-    let mut packages = Vec::new();
+#[derive(Default, Debug, Clone)]
+pub struct ManifestTracker {
+    pub documents: Arc<RwLock<HashMap<Url, Vec<Dependency>>>>,
+}
 
-    let mut document = DocumentState::Start;
+impl ManifestTracker {
+    pub async fn update_from_source(&self, url: Url, source: &str) {
+        use DocumentState::*;
+        let mut packages = Vec::new();
 
-    for (i, line) in source.lines().enumerate() {
-        if let Some(section) = match line.trim() {
-            "[package]" => Some(DocumentState::Package),
-            "[dependencies]" => Some(DocumentState::Dependencies),
-            "[dev-dependencies]" => Some(DocumentState::DevDependencies),
-            _ => None,
-        } {
-            document = section;
-            continue;
-        }
+        let mut document = DocumentState::Start;
 
-        if line.trim().is_empty() {
-            continue;
-        }
-
-        match document {
-            Start => (),
-            Package => (),
-            Dependencies | DevDependencies => {
-                if let Some(mut dependency) = Line::parse(line) {
-                    // Line::parse assumes line 0, modify so we have to fix this manually.
-                    if let Some(mut version) = dependency.version.as_mut() {
-                        version.range_mut().start.line = i as u32;
-                        version.range_mut().end.line = i as u32;
-                    }
-                    packages.push((i, dependency))
-                }
+        for (i, line) in source.lines().enumerate() {
+            if let Some(section) = match line.trim() {
+                "[package]" => Some(DocumentState::Package),
+                "[dependencies]" => Some(DocumentState::Dependencies),
+                "[dev-dependencies]" => Some(DocumentState::DevDependencies),
+                _ => None,
+            } {
+                document = section;
+                continue;
             }
-        };
+
+            if line.trim().is_empty() {
+                continue;
+            }
+
+            match document {
+                Start => (),
+                Package => (),
+                Dependencies | DevDependencies => {
+                    if let Some(mut dependency) = Line::parse(line) {
+                        // Line::parse assumes line 0, modify so we have to fix this manually.
+                        if let Some(version) = dependency.version.as_mut() {
+                            version.range_mut().start.line = i as u32;
+                            version.range_mut().end.line = i as u32;
+                        }
+                        packages.push(dependency)
+                    }
+                }
+            };
+        }
+
+        let mut lock = self.documents.write().await;
+        lock.insert(url, packages);
     }
 
-    packages
+    async fn get(&self, url: &Url) -> Option<Vec<Dependency>> {
+        let dependencies = {
+            let lock = self.documents.read().await;
+            lock.get(url).cloned()
+        };
+
+        dependencies
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::detect_versions;
     use indoc::indoc;
+    use tower_lsp::lsp_types::Url;
 
-    #[test]
-    fn detect_plain_version() {
+    use crate::parse::ManifestTracker;
+
+    #[tokio::test]
+    async fn detect_plain_version() {
+        let url = Url::parse("file:///test").unwrap();
+
         let cargo = indoc! {r#"
             [dependencies]
             complete_simple_major = "1"
@@ -307,10 +332,11 @@ mod tests {
             partial_struct5 = { version = "1.20, features = }
         "#};
 
-        let versions = detect_versions(&cargo);
+        let manifests = ManifestTracker::default();
+        manifests.update_from_source(url.clone(), cargo).await;
 
-        for (line, dep) in versions {
-            println!("{line}: {dep:?}");
+        for dependency in manifests.get(&url).await.unwrap() {
+            println!("{dependency}");
         }
     }
 }
