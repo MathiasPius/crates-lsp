@@ -1,4 +1,6 @@
-use parse::ManifestTracker;
+use parse::{DependencyVersion, ManifestTracker};
+use registry::api::CrateApi;
+use registry::CrateRegistry;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
@@ -6,10 +8,11 @@ use tower_lsp::{Client, LanguageServer, LspService, Server};
 mod parse;
 mod registry;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Backend {
     client: Client,
     manifests: ManifestTracker,
+    registry: CrateApi,
 }
 
 #[tower_lsp::async_trait]
@@ -40,6 +43,7 @@ impl LanguageServer for Backend {
                     }),
                     file_operations: None,
                 }),
+
                 ..ServerCapabilities::default()
             },
             ..Default::default()
@@ -74,10 +78,81 @@ impl LanguageServer for Backend {
             .await;
 
         if let Some(content) = params.content_changes.first() {
-            self.manifests
-                .update_from_source(params.text_document.uri, &content.text)
+            let packages = self
+                .manifests
+                .update_from_source(params.text_document.uri.clone(), &content.text)
                 .await;
 
+            let dependency_names: Vec<&str> = packages
+                .iter()
+                .map(|dependency| dependency.name.as_str())
+                .collect();
+
+            let newest_packages = self.registry.fetch_versions(&dependency_names).await;
+
+            self.client
+                .log_message(
+                    MessageType::WARNING,
+                    format!("{packages:#?}\n{newest_packages:#?}"),
+                )
+                .await;
+
+            let diagnostics: Vec<_> = packages
+                .into_iter()
+                .filter_map(|dependency| {
+                    if let Some(version) = dependency.version {
+                        if let Some(Some(newest_version)) = newest_packages.get(&dependency.name) {
+                            match version {
+                                DependencyVersion::Complete { range, version } => {
+                                    if !version.matches(newest_version) {
+                                        Some(Diagnostic {
+                                            range,
+                                            severity: Some(DiagnosticSeverity::INFORMATION),
+                                            code: None,
+                                            code_description: None,
+                                            source: Some(String::from("crates")),
+                                            message: newest_version.to_string(),
+                                            related_information: None,
+                                            tags: None,
+                                            data: None,
+                                        })
+                                    } else {
+                                        None
+                                    }
+                                }
+
+                                DependencyVersion::Partial { range, .. } => Some(Diagnostic {
+                                    range,
+                                    severity: Some(DiagnosticSeverity::INFORMATION),
+                                    code: None,
+                                    code_description: None,
+                                    source: Some(String::from("crates")),
+                                    message: newest_version.to_string(),
+                                    related_information: None,
+                                    tags: None,
+                                    data: None,
+                                }),
+                            }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            self.client
+                .log_message(MessageType::WARNING, format!("{diagnostics:#?}"))
+                .await;
+
+            self.client
+                .publish_diagnostics(
+                    params.text_document.uri,
+                    diagnostics,
+                    Some(params.text_document.version),
+                )
+                .await;
             /*
             let dependencies = detect_versions(&content.text);
 
@@ -237,6 +312,7 @@ async fn main() {
     let (service, socket) = LspService::new(|client| Backend {
         client,
         manifests: ManifestTracker::default(),
+        registry: CrateApi::default(),
     });
     Server::new(stdin, stdout, socket).serve(service).await;
 }

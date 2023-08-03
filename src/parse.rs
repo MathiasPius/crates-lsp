@@ -250,11 +250,11 @@ impl<'a> Line<'a> {
 
 #[derive(Default, Debug, Clone)]
 pub struct ManifestTracker {
-    pub documents: Arc<RwLock<HashMap<Url, Vec<Dependency>>>>,
+    manifests: Arc<RwLock<HashMap<Url, Vec<Dependency>>>>,
 }
 
 impl ManifestTracker {
-    pub async fn update_from_source(&self, url: Url, source: &str) {
+    pub async fn update_from_source(&self, url: Url, source: &str) -> Vec<Dependency> {
         use DocumentState::*;
         let mut packages = Vec::new();
 
@@ -291,13 +291,15 @@ impl ManifestTracker {
             };
         }
 
-        let mut lock = self.documents.write().await;
-        lock.insert(url, packages);
+        let mut lock = self.manifests.write().await;
+        lock.insert(url, packages.clone());
+
+        packages
     }
 
     async fn get(&self, url: &Url) -> Option<Vec<Dependency>> {
         let dependencies = {
-            let lock = self.documents.read().await;
+            let lock = self.manifests.read().await;
             lock.get(url).cloned()
         };
 
