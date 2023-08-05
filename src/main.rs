@@ -1,6 +1,5 @@
 use parse::{DependencyVersion, ManifestTracker};
-use registry::api::CrateApi;
-use registry::CrateRegistry;
+use registry::CrateApi;
 use semver::Version;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
@@ -109,8 +108,16 @@ impl LanguageServer for Backend {
                 .map(|dependency| dependency.name.as_str())
                 .collect();
 
+            self.client
+                .log_message(MessageType::INFO, format!("{dependency_names:#?}"))
+                .await;
+
             // Get the newest version of each crate that appears in the manifest.
             let newest_packages = self.registry.fetch_versions(&dependency_names).await;
+
+            self.client
+                .log_message(MessageType::INFO, format!("{newest_packages:#?}"))
+                .await;
 
             // Produce diagnostic hints for each crate where we might be helpful.
             let diagnostics: Vec<_> = packages

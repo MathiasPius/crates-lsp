@@ -6,28 +6,23 @@ use std::{
 use hyper::{client::HttpConnector, Body, Request};
 use hyper_rustls::HttpsConnector;
 use semver::Version;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 use tokio::sync::{mpsc, RwLock};
 
-use super::CrateRegistry;
-
 type HyperClient = hyper::Client<HttpsConnector<HttpConnector>>;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Fetch {
+    pub version: Option<Version>,
+    #[serde(with = "time::serde::iso8601")]
+    pub timestamp: OffsetDateTime,
+}
 
 #[derive(Debug, Clone)]
 pub struct CrateApi {
     client: HyperClient,
-    crates: Arc<RwLock<HashMap<String, Option<Version>>>>,
-}
-
-#[derive(Deserialize)]
-struct CrateInner {
-    pub max_stable_version: Version,
-}
-
-#[derive(Deserialize)]
-struct Crate {
-    #[serde(rename = "crate")]
-    pub inner: CrateInner,
+    crates: Arc<RwLock<HashMap<String, Fetch>>>,
 }
 
 #[derive(Debug)]
@@ -63,32 +58,24 @@ impl CrateApi {
 
         let stringified = String::from_utf8_lossy(&body);
 
+        #[derive(Deserialize)]
+        struct CrateInner {
+            pub max_stable_version: Version,
+        }
+
+        #[derive(Deserialize)]
+        struct Crate {
+            #[serde(rename = "crate")]
+            pub inner: CrateInner,
+        }
+
         let details: Crate =
             serde_json::from_str(&stringified).map_err(CrateError::Deserialization)?;
 
         Ok(details.inner.max_stable_version)
     }
-}
 
-impl Default for CrateApi {
-    fn default() -> Self {
-        let https = hyper_rustls::HttpsConnectorBuilder::new()
-            .with_native_roots()
-            .https_only()
-            .enable_http1()
-            .build();
-        let client = hyper::Client::builder().build(https);
-
-        CrateApi {
-            client,
-            crates: Arc::new(RwLock::new(HashMap::default())),
-        }
-    }
-}
-
-#[tower_lsp::async_trait]
-impl CrateRegistry for CrateApi {
-    async fn fetch_versions(&self, crate_names: &[&str]) -> HashMap<String, Option<Version>> {
+    pub async fn fetch_versions(&self, crate_names: &[&str]) -> HashMap<String, Option<Version>> {
         let crate_names: HashSet<&str> = HashSet::from_iter(crate_names.iter().copied());
 
         let values = { self.crates.read().await.clone() };
@@ -121,24 +108,46 @@ impl CrateRegistry for CrateApi {
                     break;
                 };
 
-                fetched_versions.push((name, version));
+                fetched_versions.push((
+                    name,
+                    Fetch {
+                        version,
+                        timestamp: OffsetDateTime::now_utc(),
+                    },
+                ));
             }
 
             // Commit the updated versions to our crates hashmap.
-            let mut lock = self.crates.write().await;
-            lock.extend(fetched_versions.into_iter());
+            let mut crates = self.crates.write().await;
+            crates.extend(fetched_versions.into_iter());
 
             // Clone the entire hashmap, instead of keeping the lock.
-            lock.clone()
+            crates.clone()
         } else {
             self.crates.read().await.clone()
         }
     }
 }
 
+impl Default for CrateApi {
+    fn default() -> Self {
+        let https = hyper_rustls::HttpsConnectorBuilder::new()
+            .with_native_roots()
+            .https_only()
+            .enable_http1()
+            .build();
+        let client = hyper::Client::builder().build(https);
+
+        CrateApi {
+            client,
+            crates: Arc::new(RwLock::new(HashMap::default())),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::registry::{api::CrateApi, CrateRegistry};
+    use crate::registry::CrateApi;
 
     #[tokio::test]
     async fn get_common_crates() {
