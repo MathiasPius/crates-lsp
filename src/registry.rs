@@ -13,7 +13,7 @@ use tokio::sync::{mpsc, RwLock};
 
 type HyperClient = hyper::Client<HttpsConnector<HttpConnector>>;
 
-const CRATE_CACHE_DIR: &str = "./.cargo/crates-lsp-crate-cache";
+const CRATE_CACHE_DIR: &str = "./.lapce/plugins/crates-lsp/crates.io";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Fetch {
@@ -179,6 +179,9 @@ impl Default for CrateApi {
 
         std::fs::create_dir_all(CRATE_CACHE_DIR)
             .expect("Failed to create cargo crate version cache dir.");
+
+        std::fs::write(Path::new(CRATE_CACHE_DIR).join(".gitignore"), "*")
+            .expect("failed to create crates-lsp .gitignore file.");
 
         CrateApi {
             client,
