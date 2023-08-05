@@ -35,7 +35,6 @@ impl LanguageServer for Backend {
         Ok(InitializeResult {
             server_info: None,
             capabilities: ServerCapabilities {
-                inlay_hint_provider: Some(OneOf::Left(true)),
                 text_document_sync: Some(TextDocumentSyncCapability::Kind(
                     TextDocumentSyncKind::FULL,
                 )),
@@ -69,7 +68,7 @@ impl LanguageServer for Backend {
 
     async fn initialized(&self, _: InitializedParams) {
         self.client
-            .log_message(MessageType::INFO, "initialized!")
+            .log_message(MessageType::INFO, "crates-lsp initialized.")
             .await;
     }
 
@@ -77,23 +76,7 @@ impl LanguageServer for Backend {
         Ok(())
     }
 
-    async fn did_change_watched_files(&self, _: DidChangeWatchedFilesParams) {
-        self.client
-            .log_message(MessageType::INFO, "watched files have changed!")
-            .await;
-    }
-
-    async fn did_open(&self, _: DidOpenTextDocumentParams) {
-        self.client
-            .log_message(MessageType::INFO, "file opened!")
-            .await;
-    }
-
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
-        self.client
-            .log_message(MessageType::INFO, "file changed!")
-            .await;
-
         if let Some(content) = params.content_changes.first() {
             // Fetch the parsed manifest of the file in question.
             let packages = self
@@ -108,16 +91,8 @@ impl LanguageServer for Backend {
                 .map(|dependency| dependency.name.as_str())
                 .collect();
 
-            self.client
-                .log_message(MessageType::INFO, format!("{dependency_names:#?}"))
-                .await;
-
             // Get the newest version of each crate that appears in the manifest.
             let newest_packages = self.registry.fetch_versions(&dependency_names).await;
-
-            self.client
-                .log_message(MessageType::INFO, format!("{newest_packages:#?}"))
-                .await;
 
             // Produce diagnostic hints for each crate where we might be helpful.
             let diagnostics: Vec<_> = packages
@@ -177,16 +152,22 @@ impl LanguageServer for Backend {
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
         let cursor = params.text_document_position.position;
 
-        let Some(dependencies) = self.manifests.get(&params.text_document_position.text_document.uri).await else {
-            return Ok(None)
+        let Some(dependencies) = self
+            .manifests
+            .get(&params.text_document_position.text_document.uri)
+            .await
+        else {
+            return Ok(None);
         };
 
         let Some(dependency) = dependencies.into_iter().find(|dependency| {
             dependency.version.as_ref().is_some_and(|version| {
-                version.range().start.line == cursor.line && version.range().start.character <= cursor.character && version.range().end.character >= cursor.character
+                version.range().start.line == cursor.line
+                    && version.range().start.character <= cursor.character
+                    && version.range().end.character >= cursor.character
             })
         }) else {
-            return Ok(None)
+            return Ok(None);
         };
 
         let packages = self.registry.fetch_versions(&[&dependency.name]).await;
@@ -215,111 +196,10 @@ impl LanguageServer for Backend {
             Ok(None)
         }
     }
-
-    async fn inlay_hint(
-        &self,
-        _: tower_lsp::lsp_types::InlayHintParams,
-    ) -> Result<Option<Vec<InlayHint>>> {
-        Ok(Some(vec![]))
-    }
-    /*
-    async fn inlay_hint(
-        &self,
-        params: tower_lsp::lsp_types::InlayHintParams,
-    ) -> Result<Option<Vec<InlayHint>>> {
-        let uri = &params.text_document.uri;
-
-        self.client
-            .log_message(
-                MessageType::INFO,
-                format!("inlay hint: {uri}, {:#?}", &self.versions),
-            )
-            .await;
-
-        let versions = {
-            let guard = self.versions.inner.read().await;
-            guard.get(&params.text_document.uri).cloned()
-        };
-
-        let Some(versions) = versions else {
-            return Ok(None);
-        };
-
-        self.client
-            .log_message(
-                MessageType::INFO,
-                format!("inlay hint: {uri}, {}", versions.len()),
-            )
-            .await;
-
-        Ok(Some(
-            versions
-                .iter()
-                .filter_map(|dependency| {
-                    let Some(ref version) = dependency.version else {
-                        return None;
-                    };
-
-                    Some(InlayHint {
-                        text_edits: None,
-                        tooltip: None,
-                        kind: Some(InlayHintKind::TYPE),
-                        padding_left: None,
-                        padding_right: None,
-                        data: None,
-                        position: version.range().end,
-                        label: InlayHintLabel::LabelParts(vec![InlayHintLabelPart {
-                            value: version.to_string(),
-                            tooltip: None,
-                            location: Some(Location {
-                                uri: params.text_document.uri.clone(),
-                                range: Range {
-                                    start: Position::new(0, 4),
-                                    end: Position::new(0, 5),
-                                },
-                            }),
-                            command: None,
-                        }]),
-                    })
-                })
-                .collect(),
-        ))
-    }
-    */
-
-    /*
-    async fn did_change_workspace_folders(&self, _: DidChangeWorkspaceFoldersParams) {
-        self.client
-            .log_message(MessageType::INFO, "workspace folders changed!")
-            .await;
-    }
-
-    async fn did_change_configuration(&self, _: DidChangeConfigurationParams) {
-        self.client
-            .log_message(MessageType::INFO, "configuration changed!")
-            .await;
-    }
-
-    async fn execute_command(&self, _: ExecuteCommandParams) -> Result<Option<Value>> {
-        self.client
-            .log_message(MessageType::INFO, "command executed!")
-            .await;
-
-        match self.client.apply_edit(WorkspaceEdit::default()).await {
-            Ok(res) if res.applied => self.client.log_message(MessageType::INFO, "applied").await,
-            Ok(_) => self.client.log_message(MessageType::INFO, "rejected").await,
-            Err(err) => self.client.log_message(MessageType::ERROR, err).await,
-        }
-
-        Ok(None)
-    }
-    */
 }
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
-    tracing_subscriber::fmt().init();
-
     let (stdin, stdout) = (tokio::io::stdin(), tokio::io::stdout());
 
     let (service, socket) = LspService::new(|client| Backend {

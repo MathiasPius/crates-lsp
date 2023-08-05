@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    path::Path,
     sync::Arc,
 };
 
@@ -11,6 +12,8 @@ use time::OffsetDateTime;
 use tokio::sync::{mpsc, RwLock};
 
 type HyperClient = hyper::Client<HttpsConnector<HttpConnector>>;
+
+const CRATE_CACHE_DIR: &str = "./.cargo/crates-lsp-crate-cache";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Fetch {
@@ -89,10 +92,29 @@ impl CrateApi {
         if !unknown_crates.is_empty() {
             let (tx, mut rx) = mpsc::channel(crate_names.len());
 
+            // This collects fetched version information, either from the local
+            // file cache, or from the crates.io api itself.
+            let mut fetched_versions = Vec::new();
+
             // Fetch information for unknown crates asynchronously.
+            let mut dispatched_tasks = 0;
             for unknown_crate in unknown_crates {
                 let client = self.client.clone();
                 let tx = tx.clone();
+
+                // Try reading from the on-disk cache first.
+                if let Some(content) =
+                    std::fs::read_to_string(Path::new(CRATE_CACHE_DIR).join(&unknown_crate)).ok()
+                {
+                    if let Ok(fetch) = serde_json::from_str::<Fetch>(&content) {
+                        if (OffsetDateTime::now_utc() - fetch.timestamp).whole_days() > 0 {
+                            fetched_versions.push((unknown_crate, fetch));
+                            continue;
+                        }
+                    }
+                }
+
+                dispatched_tasks += 1;
                 tokio::spawn(async move {
                     match CrateApi::get_latest_version(client, unknown_crate.clone()).await {
                         Ok(version) => tx.send((unknown_crate, Some(version))).await,
@@ -102,19 +124,26 @@ impl CrateApi {
             }
 
             // Collect all the results into a single vector.
-            let mut fetched_versions = Vec::new();
-            for _ in 0..crate_names.len() {
+
+            for _ in 0..dispatched_tasks {
                 let Some((name, version)) = rx.recv().await else {
                     break;
                 };
 
-                fetched_versions.push((
-                    name,
-                    Fetch {
-                        version,
-                        timestamp: OffsetDateTime::now_utc(),
-                    },
-                ));
+                let fetch = Fetch {
+                    version,
+                    timestamp: OffsetDateTime::now_utc(),
+                };
+
+                std::fs::write(Path::new(CRATE_CACHE_DIR).join("test"), "hello").unwrap();
+
+                std::fs::write(
+                    Path::new(CRATE_CACHE_DIR).join(&name),
+                    serde_json::to_string(&fetch).as_deref().unwrap_or("{}"),
+                )
+                .unwrap();
+
+                fetched_versions.push((name, fetch));
             }
 
             // Commit the updated versions to our crates hashmap.
@@ -122,9 +151,19 @@ impl CrateApi {
             crates.extend(fetched_versions.into_iter());
 
             // Clone the entire hashmap, instead of keeping the lock.
-            crates.clone()
+            crates
+                .iter()
+                .filter(|(name, _)| crate_names.contains(name.as_str()))
+                .map(|(name, fetch)| (name.to_owned(), fetch.version.clone()))
+                .collect()
         } else {
-            self.crates.read().await.clone()
+            self.crates
+                .read()
+                .await
+                .iter()
+                .filter(|(name, _)| crate_names.contains(name.as_str()))
+                .map(|(name, fetch)| (name.to_owned(), fetch.version.clone()))
+                .collect()
         }
     }
 }
@@ -137,6 +176,9 @@ impl Default for CrateApi {
             .enable_http1()
             .build();
         let client = hyper::Client::builder().build(https);
+
+        std::fs::create_dir_all(CRATE_CACHE_DIR)
+            .expect("Failed to create cargo crate version cache dir.");
 
         CrateApi {
             client,
