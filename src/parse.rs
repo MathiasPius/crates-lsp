@@ -4,7 +4,7 @@ use semver::VersionReq;
 use tokio::sync::RwLock;
 use tower_lsp::lsp_types::{Position, Range, Url};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Dependency {
     pub name: String,
     pub version: Option<DependencyVersion>,
@@ -20,7 +20,7 @@ impl Display for Dependency {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DependencyVersion {
     Partial { range: Range, version: String },
     Complete { range: Range, version: VersionReq },
@@ -52,10 +52,9 @@ impl Display for DependencyVersion {
 }
 
 enum DocumentState {
-    Start,
-    Package,
     Dependencies,
-    DevDependencies,
+    Dependency(String),
+    Other,
 }
 
 #[derive(Debug)]
@@ -259,27 +258,57 @@ impl ManifestTracker {
         use DocumentState::*;
         let mut packages = Vec::new();
 
-        let mut document = DocumentState::Start;
+        // We use this to keep track of our current context within the document,
+        // since we only want to act on dependencies in actual dependency sections,
+        // and not pick up `version = "1.2.3"` as a dependency on a "version" crate
+        // in the middle of the package section.
+        let mut document = DocumentState::Other;
 
         for (i, line) in source.lines().enumerate() {
-            if let Some(section) = match line.trim() {
-                "[package]" => Some(DocumentState::Package),
-                "[dependencies]" => Some(DocumentState::Dependencies),
-                "[dev-dependencies]" => Some(DocumentState::DevDependencies),
-                _ => None,
-            } {
-                document = section;
+            let line = line.trim();
+
+            if line.is_empty() {
                 continue;
             }
 
-            if line.trim().is_empty() {
+            // Detect start of new section.
+            if line.starts_with('[') {
+                if line.starts_with("[dependencies") {
+                    if let Some(package) = line.strip_prefix("[dependencies.") {
+                        // This is the case where a dependency is specified over multiple lines, for example:
+                        //
+                        // ```toml
+                        // [dependencies.serde]
+                        // version = "1.0.108"
+                        // ```
+                        document =
+                            DocumentState::Dependency(package.trim_end_matches(']').to_string());
+                    } else {
+                        // This is just a plain old [dependencies] section
+                        document = DocumentState::Dependencies;
+                    }
+                } else if line.ends_with("dependencies]") {
+                    // Covers [build-dependencies], [dev-dependencies], [target.'cfg(unix)'.dependencies], etc.
+                    // Crucially does *not* break specifying packages ending in "dependencies" in the verbose way
+                    // since that case is covered by the previous if-branch matching on '[dependencies':
+                    //
+                    // ```toml
+                    // [dependencies.crate-ending-in-dependencies]
+                    // version = "1"
+                    // ```
+                    document = DocumentState::Dependencies;
+                } else {
+                    document = DocumentState::Other;
+                }
+
+                // Section starts cannot contain version information, so skip the rest of the loop.
                 continue;
             }
 
             match document {
-                Start => (),
-                Package => (),
-                Dependencies | DevDependencies => {
+                Dependencies => {
+                    // If we're in a generic dependency section, and find a line
+                    // which can be parsed as a versioned dependency, push it as a package.
                     if let Some(mut dependency) = Line::parse(line) {
                         // Line::parse assumes line 0, modify so we have to fix this manually.
                         if let Some(version) = dependency.version.as_mut() {
@@ -289,6 +318,34 @@ impl ManifestTracker {
                         packages.push(dependency)
                     }
                 }
+                Dependency(ref name) => {
+                    // We parse the line as a regular dependency, and check if the dependency name is "version"
+                    // This is a hack, but it means we don't have to write custom parsing code for sections like this:
+
+                    // ```toml
+                    // [dependencies.serde]
+                    // version = "1"
+                    // ```
+                    if let Some(mut dependency) = Line::parse(line) {
+                        if dependency.name != "version" {
+                            continue;
+                        } else {
+                            // Rename to the package section, since the dependency is currently
+                            // named "version" because of the Line::parse logic assuming this is
+                            // a regular dependencies section.
+                            dependency.name = name.clone();
+                        }
+                        // Line::parse assumes line 0, modify so we have to fix this manually.
+                        if let Some(version) = dependency.version.as_mut() {
+                            version.range_mut().start.line = i as u32;
+                            version.range_mut().end.line = i as u32;
+                        }
+                        packages.push(dependency)
+                    }
+                }
+                // We're either at the start of the document, or in an irrelevant section
+                // such as [package], do nothing.
+                Other => (),
             };
         }
 
@@ -312,8 +369,11 @@ impl ManifestTracker {
 mod tests {
     use indoc::indoc;
     use semver::VersionReq;
+    use tower_lsp::lsp_types::Position;
+    use tower_lsp::lsp_types::Range;
     use tower_lsp::lsp_types::Url;
 
+    use crate::parse::Dependency;
     use crate::parse::DependencyVersion;
     use crate::parse::Line;
     use crate::parse::ManifestTracker;
@@ -349,9 +409,9 @@ mod tests {
     fn matches_complete(line: &str, name: &str, version: &str) {
         let line = Line::parse(line).unwrap();
         let expected_version = VersionReq::parse(version).unwrap();
-        
+
         assert_eq!(line.name, name);
-        
+
         match line.version.unwrap() {
             DependencyVersion::Partial { .. } => panic!("expected complete version selector"),
             DependencyVersion::Complete { version, .. } => {
@@ -359,11 +419,11 @@ mod tests {
             }
         }
     }
-    
+
     fn matches_partial(line: &str, name: &str, expected_version: &str) {
-        let line = Line::parse(line).unwrap();        
+        let line = Line::parse(line).unwrap();
         assert_eq!(line.name, name);
-        
+
         match line.version.unwrap() {
             DependencyVersion::Complete { .. } => panic!("expected partial version selector"),
             DependencyVersion::Partial { version, .. } => {
@@ -371,7 +431,7 @@ mod tests {
             }
         }
     }
-    
+
     #[test]
     fn parse_complete() {
         matches_complete("complete = \"1.2.3\"", "complete", "1.2.3");
@@ -381,7 +441,7 @@ mod tests {
         matches_complete("complete = \"1\"", "complete", "1");
         matches_complete("complete = \"=1\"", "complete", "=1");
     }
-    
+
     #[test]
     fn parse_complete_version_field() {
         matches_complete("complete = { version = \"1.2.3\" }", "complete", "1.2.3");
@@ -391,19 +451,74 @@ mod tests {
         matches_complete("complete = { version = \"1\" }", "complete", "1");
         matches_complete("complete = { version = \"=1\" }", "complete", "=1");
     }
-    
+
     #[test]
-    fn parse_partial_version_field() {
-        matches_partial("partial = { version = \"1.2.3", "partial", "1.2.3");
-        matches_partial("partial = { version = \"1.2.", "partial", "1.2.");
-        matches_partial("partial = { version = \"1.2", "partial", "1.2");
-        matches_partial("partial = { version = \"1.", "partial", "1.");
-        matches_partial("partial = { version = \"1", "partial", "1");
+    fn parse_partial() {
+        matches_partial("partial = \"1.2.3", "partial", "1.2.3");
+        matches_partial("partial = \"1.2.", "partial", "1.2.");
+        matches_partial("partial = \"1.2", "partial", "1.2");
+        matches_partial("partial \"1.", "partial", "1.");
+        matches_partial("partial \"1", "partial", "1");
+
+        matches_partial("partial \"1.2.3, features = [", "partial", "1.2.3");
+        matches_partial("partial \"1.2., features = [", "partial", "1.2.");
+        matches_partial("partial \"1.2, features = [", "partial", "1.2");
+        matches_partial("partial \"1., features = [", "partial", "1.");
+        matches_partial("partial \"1, features = [", "partial", "1");
+    }
+
+    #[tokio::test]
+    async fn parse_independent_dependency_section() {
+        let url = Url::parse("file:///test").unwrap();
+
+        let cargo = indoc! {r#"
+            [dependencies]
+            log = "1"
             
-        matches_partial("partial = { version = \"1.2.3, features = [", "partial", "1.2.3");
-        matches_partial("partial = { version = \"1.2., features = [", "partial", "1.2.");
-        matches_partial("partial = { version = \"1.2, features = [", "partial", "1.2");
-        matches_partial("partial = { version = \"1., features = [", "partial", "1.");
-        matches_partial("partial = { version = \"1, features = [", "partial", "1");
+            [dependencies.serde]
+            version = "1"
+            
+            [dependencies.tokio]
+            version = "1"
+        "#};
+
+        let manifests = ManifestTracker::default();
+        manifests.update_from_source(url.clone(), cargo).await;
+
+        assert_eq!(
+            manifests.get(&url).await.unwrap(),
+            vec![
+                Dependency {
+                    name: "log".to_string(),
+                    version: Some(DependencyVersion::Complete {
+                        range: Range {
+                            start: Position::new(1, 6),
+                            end: Position::new(1, 8)
+                        },
+                        version: VersionReq::parse("1").unwrap()
+                    })
+                },
+                Dependency {
+                    name: "serde".to_string(),
+                    version: Some(DependencyVersion::Complete {
+                        range: Range {
+                            start: Position::new(4, 10),
+                            end: Position::new(4, 12)
+                        },
+                        version: VersionReq::parse("1").unwrap()
+                    })
+                },
+                Dependency {
+                    name: "tokio".to_string(),
+                    version: Some(DependencyVersion::Complete {
+                        range: Range {
+                            start: Position::new(7, 10),
+                            end: Position::new(7, 12)
+                        },
+                        version: VersionReq::parse("1").unwrap()
+                    })
+                }
+            ]
+        );
     }
 }
