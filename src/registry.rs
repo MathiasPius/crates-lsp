@@ -103,8 +103,8 @@ impl CrateApi {
                 let tx = tx.clone();
 
                 // Try reading from the on-disk cache first.
-                if let Some(content) =
-                    std::fs::read_to_string(Path::new(CRATE_CACHE_DIR).join(&unknown_crate)).ok()
+                if let Ok(content) =
+                    std::fs::read_to_string(Path::new(CRATE_CACHE_DIR).join(&unknown_crate))
                 {
                     if let Ok(fetch) = serde_json::from_str::<Fetch>(&content) {
                         if (OffsetDateTime::now_utc() - fetch.timestamp).whole_days() > 0 {
@@ -148,7 +148,7 @@ impl CrateApi {
 
             // Commit the updated versions to our crates hashmap.
             let mut crates = self.crates.write().await;
-            crates.extend(fetched_versions.into_iter());
+            crates.extend(fetched_versions);
 
             // Clone the entire hashmap, instead of keeping the lock.
             crates

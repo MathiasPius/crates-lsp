@@ -98,7 +98,10 @@ impl LanguageServer for Backend {
                                             end: Position::new(range.start.line, 0),
                                         };
 
-                                        return Some(Diagnostic::new_simple(range, "✓".to_string()));
+                                        return Some(Diagnostic::new_simple(
+                                            range,
+                                            "✓".to_string(),
+                                        ));
                                     }
                                 }
 
