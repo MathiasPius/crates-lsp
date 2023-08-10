@@ -223,7 +223,7 @@ impl<'a> Line<'a> {
             } => Some(Dependency {
                 name: name.to_string(),
                 version: version.map(|version| DependencyVersion::Partial {
-                    version: version[1..].trim().to_string(),
+                    version: version[1..].trim().trim_matches(',').to_string(),
                     range: Range::new(
                         Position::new(0, start as u32),
                         Position::new(0, line.len() as u32),
@@ -311,8 +311,11 @@ impl ManifestTracker {
 #[cfg(test)]
 mod tests {
     use indoc::indoc;
+    use semver::VersionReq;
     use tower_lsp::lsp_types::Url;
 
+    use crate::parse::DependencyVersion;
+    use crate::parse::Line;
     use crate::parse::ManifestTracker;
 
     #[tokio::test]
@@ -341,5 +344,66 @@ mod tests {
         for dependency in manifests.get(&url).await.unwrap() {
             println!("{dependency}");
         }
+    }
+
+    fn matches_complete(line: &str, name: &str, version: &str) {
+        let line = Line::parse(line).unwrap();
+        let expected_version = VersionReq::parse(version).unwrap();
+        
+        assert_eq!(line.name, name);
+        
+        match line.version.unwrap() {
+            DependencyVersion::Partial { .. } => panic!("expected complete version selector"),
+            DependencyVersion::Complete { version, .. } => {
+                assert_eq!(version, expected_version)
+            }
+        }
+    }
+    
+    fn matches_partial(line: &str, name: &str, expected_version: &str) {
+        let line = Line::parse(line).unwrap();        
+        assert_eq!(line.name, name);
+        
+        match line.version.unwrap() {
+            DependencyVersion::Complete { .. } => panic!("expected partial version selector"),
+            DependencyVersion::Partial { version, .. } => {
+                assert_eq!(version.as_str(), expected_version)
+            }
+        }
+    }
+    
+    #[test]
+    fn parse_complete() {
+        matches_complete("complete = \"1.2.3\"", "complete", "1.2.3");
+        matches_complete("complete = \"=1.2.3\"", "complete", "=1.2.3");
+        matches_complete("complete = \"1.2\"", "complete", "1.2");
+        matches_complete("complete = \"=1.2\"", "complete", "=1.2");
+        matches_complete("complete = \"1\"", "complete", "1");
+        matches_complete("complete = \"=1\"", "complete", "=1");
+    }
+    
+    #[test]
+    fn parse_complete_version_field() {
+        matches_complete("complete = { version = \"1.2.3\" }", "complete", "1.2.3");
+        matches_complete("complete = { version = \"=1.2.3\" }", "complete", "=1.2.3");
+        matches_complete("complete = { version = \"1.2\" }", "complete", "1.2");
+        matches_complete("complete = { version = \"=1.2\" }", "complete", "=1.2");
+        matches_complete("complete = { version = \"1\" }", "complete", "1");
+        matches_complete("complete = { version = \"=1\" }", "complete", "=1");
+    }
+    
+    #[test]
+    fn parse_partial_version_field() {
+        matches_partial("partial = { version = \"1.2.3", "partial", "1.2.3");
+        matches_partial("partial = { version = \"1.2.", "partial", "1.2.");
+        matches_partial("partial = { version = \"1.2", "partial", "1.2");
+        matches_partial("partial = { version = \"1.", "partial", "1.");
+        matches_partial("partial = { version = \"1", "partial", "1");
+            
+        matches_partial("partial = { version = \"1.2.3, features = [", "partial", "1.2.3");
+        matches_partial("partial = { version = \"1.2., features = [", "partial", "1.2.");
+        matches_partial("partial = { version = \"1.2, features = [", "partial", "1.2");
+        matches_partial("partial = { version = \"1., features = [", "partial", "1.");
+        matches_partial("partial = { version = \"1, features = [", "partial", "1");
     }
 }
