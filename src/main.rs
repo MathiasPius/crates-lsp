@@ -131,24 +131,6 @@ impl LanguageServer for Backend {
         }
     }
 
-    async fn did_save(&self, params: DidSaveTextDocumentParams) {
-        self.client
-            .log_message(MessageType::INFO, "file saved!")
-            .await;
-
-        if let Some(text) = params.text.as_deref() {
-            self.manifests
-                .update_from_source(params.text_document.uri, text)
-                .await;
-        }
-    }
-
-    async fn did_close(&self, _: DidCloseTextDocumentParams) {
-        self.client
-            .log_message(MessageType::INFO, "file closed!")
-            .await;
-    }
-
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
         let cursor = params.text_document_position.position;
 
