@@ -88,23 +88,32 @@ impl LanguageServer for Backend {
                             match version {
                                 DependencyVersion::Complete { range, version } => {
                                     if !version.matches(newest_version) {
-                                        return Some(Diagnostic::new_simple(range, format!("{}: {newest_version}", &dependency.name)));
+                                        return Some(Diagnostic::new_simple(
+                                            range,
+                                            format!("{}: {newest_version}", &dependency.name),
+                                        ));
                                     } else {
                                         let range = Range {
                                             start: Position::new(range.start.line, 0),
                                             end: Position::new(range.start.line, 0),
                                         };
-                                        
-                                        return Some(Diagnostic::new_simple(range, "✓".to_string()))
+
+                                        return Some(Diagnostic::new_simple(range, "✓".to_string()));
                                     }
                                 }
 
                                 DependencyVersion::Partial { range, .. } => {
-                                    return Some(Diagnostic::new_simple(range, format!("{}: {newest_version}", &dependency.name)));
+                                    return Some(Diagnostic::new_simple(
+                                        range,
+                                        format!("{}: {newest_version}", &dependency.name),
+                                    ));
                                 }
                             }
                         } else {
-                            return Some(Diagnostic::new_simple(version.range(), format!("{}: Unknown crate", &dependency.name)));
+                            return Some(Diagnostic::new_simple(
+                                version.range(),
+                                format!("{}: Unknown crate", &dependency.name),
+                            ));
                         }
                     }
 
