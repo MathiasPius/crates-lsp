@@ -1,6 +1,5 @@
 use parse::{DependencyVersion, ManifestTracker};
 use registry::CrateApi;
-use semver::Version;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
@@ -13,20 +12,6 @@ struct Backend {
     client: Client,
     manifests: ManifestTracker,
     registry: CrateApi,
-}
-
-fn diagnostic_from_version(range: Range, version: &Version) -> Diagnostic {
-    Diagnostic {
-        range,
-        severity: Some(DiagnosticSeverity::INFORMATION),
-        code: None,
-        code_description: None,
-        source: Some(String::from("crates-lsp")),
-        message: version.to_string(),
-        related_information: None,
-        tags: None,
-        data: None,
-    }
 }
 
 #[tower_lsp::async_trait]
@@ -103,17 +88,23 @@ impl LanguageServer for Backend {
                             match version {
                                 DependencyVersion::Complete { range, version } => {
                                     if !version.matches(newest_version) {
-                                        return Some(diagnostic_from_version(
-                                            range,
-                                            newest_version,
-                                        ));
+                                        return Some(Diagnostic::new_simple(range, format!("{}: {newest_version}", &dependency.name)));
+                                    } else {
+                                        let range = Range {
+                                            start: Position::new(range.start.line, 0),
+                                            end: Position::new(range.start.line, 0),
+                                        };
+                                        
+                                        return Some(Diagnostic::new_simple(range, "✓".to_string()))
                                     }
                                 }
 
                                 DependencyVersion::Partial { range, .. } => {
-                                    return Some(diagnostic_from_version(range, newest_version));
+                                    return Some(Diagnostic::new_simple(range, format!("{}: {newest_version}", &dependency.name)));
                                 }
                             }
+                        } else {
+                            return Some(Diagnostic::new_simple(version.range(), format!("{}: Unknown crate", &dependency.name)));
                         }
                     }
 
