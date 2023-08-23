@@ -14,6 +14,66 @@ struct Backend {
     registry: CrateApi,
 }
 
+impl Backend {
+    async fn calculate_diagnostics(&self, url: Url, content: &str) -> Vec<Diagnostic> {
+        let packages = self.manifests.update_from_source(url, content).await;
+
+        // Retrieve just the package names, so we can fetch the latest
+        // versions via the crate registry.
+        let dependency_names: Vec<&str> = packages
+            .iter()
+            .map(|dependency| dependency.name.as_str())
+            .collect();
+
+        // Get the newest version of each crate that appears in the manifest.
+        let newest_packages = self.registry.fetch_versions(&dependency_names).await;
+
+        // Produce diagnostic hints for each crate where we might be helpful.
+        let diagnostics: Vec<_> = packages
+            .into_iter()
+            .filter_map(|dependency| {
+                if let Some(version) = dependency.version {
+                    if let Some(Some(newest_version)) = newest_packages.get(&dependency.name) {
+                        match version {
+                            DependencyVersion::Complete { range, version } => {
+                                if !version.matches(newest_version) {
+                                    return Some(Diagnostic::new_simple(
+                                        range,
+                                        format!("{}: {newest_version}", &dependency.name),
+                                    ));
+                                } else {
+                                    let range = Range {
+                                        start: Position::new(range.start.line, 0),
+                                        end: Position::new(range.start.line, 0),
+                                    };
+
+                                    return Some(Diagnostic::new_simple(range, "✓".to_string()));
+                                }
+                            }
+
+                            DependencyVersion::Partial { range, .. } => {
+                                return Some(Diagnostic::new_simple(
+                                    range,
+                                    format!("{}: {newest_version}", &dependency.name),
+                                ));
+                            }
+                        }
+                    } else {
+                        return Some(Diagnostic::new_simple(
+                            version.range(),
+                            format!("{}: Unknown crate", &dependency.name),
+                        ));
+                    }
+                }
+
+                None
+            })
+            .collect();
+
+        diagnostics
+    }
+}
+
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
     async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
@@ -63,66 +123,9 @@ impl LanguageServer for Backend {
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
         if let Some(content) = params.content_changes.first() {
-            // Fetch the parsed manifest of the file in question.
-            let packages = self
-                .manifests
-                .update_from_source(params.text_document.uri.clone(), &content.text)
+            let diagnostics = self
+                .calculate_diagnostics(params.text_document.uri.clone(), &content.text)
                 .await;
-
-            // Retrieve just the package names, so we can fetch the latest
-            // versions via the crate registry.
-            let dependency_names: Vec<&str> = packages
-                .iter()
-                .map(|dependency| dependency.name.as_str())
-                .collect();
-
-            // Get the newest version of each crate that appears in the manifest.
-            let newest_packages = self.registry.fetch_versions(&dependency_names).await;
-
-            // Produce diagnostic hints for each crate where we might be helpful.
-            let diagnostics: Vec<_> = packages
-                .into_iter()
-                .filter_map(|dependency| {
-                    if let Some(version) = dependency.version {
-                        if let Some(Some(newest_version)) = newest_packages.get(&dependency.name) {
-                            match version {
-                                DependencyVersion::Complete { range, version } => {
-                                    if !version.matches(newest_version) {
-                                        return Some(Diagnostic::new_simple(
-                                            range,
-                                            format!("{}: {newest_version}", &dependency.name),
-                                        ));
-                                    } else {
-                                        let range = Range {
-                                            start: Position::new(range.start.line, 0),
-                                            end: Position::new(range.start.line, 0),
-                                        };
-
-                                        return Some(Diagnostic::new_simple(
-                                            range,
-                                            "✓".to_string(),
-                                        ));
-                                    }
-                                }
-
-                                DependencyVersion::Partial { range, .. } => {
-                                    return Some(Diagnostic::new_simple(
-                                        range,
-                                        format!("{}: {newest_version}", &dependency.name),
-                                    ));
-                                }
-                            }
-                        } else {
-                            return Some(Diagnostic::new_simple(
-                                version.range(),
-                                format!("{}: Unknown crate", &dependency.name),
-                            ));
-                        }
-                    }
-
-                    None
-                })
-                .collect();
 
             self.client
                 .publish_diagnostics(
@@ -132,6 +135,20 @@ impl LanguageServer for Backend {
                 )
                 .await;
         }
+    }
+
+    async fn did_open(&self, params: DidOpenTextDocumentParams) {
+        let diagnostics = self
+            .calculate_diagnostics(params.text_document.uri.clone(), &params.text_document.text)
+            .await;
+
+        self.client
+            .publish_diagnostics(
+                params.text_document.uri,
+                diagnostics,
+                Some(params.text_document.version),
+            )
+            .await;
     }
 
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
