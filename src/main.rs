@@ -1,11 +1,11 @@
 use parse::{DependencyVersion, ManifestTracker};
 use registry::CrateApi;
-use semver::Version;
 use sparse::CrateIndex;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
+mod crates;
 mod parse;
 mod registry;
 mod sparse;
