@@ -38,10 +38,7 @@ pub trait CrateLookup: Clone + Send + 'static {
         cache: CrateCache,
         crate_names: &[&str],
     ) -> HashMap<String, Option<Version>> {
-        let crate_names: Vec<_> = crate_names
-            .into_iter()
-            .map(|name| name.to_string())
-            .collect();
+        let crate_names: Vec<_> = crate_names.iter().map(|name| name.to_string()).collect();
         //let crate_names: HashSet<&str> = HashSet::from_iter(crate_names.iter().copied());
 
         let mut versions = HashMap::new();

@@ -66,7 +66,7 @@ impl CrateCache {
 
         // Attempt to load crate informtion from file cache.
         if let Ok(content) =
-            std::fs::read_to_string(std::path::Path::new(CRATE_CACHE_DIR).join(&crate_name))
+            std::fs::read_to_string(std::path::Path::new(CRATE_CACHE_DIR).join(crate_name))
         {
             if let Ok(fetch) = serde_json::from_str::<Fetch>(&content) {
                 if OffsetDateTime::now_utc() < fetch.expires_at {
