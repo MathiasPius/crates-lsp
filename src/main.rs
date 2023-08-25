@@ -1,17 +1,20 @@
 use parse::{DependencyVersion, ManifestTracker};
 use registry::CrateApi;
+use semver::Version;
+use sparse::CrateIndex;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
 mod parse;
 mod registry;
+mod sparse;
 
 #[derive(Debug, Clone)]
 struct Backend {
     client: Client,
     manifests: ManifestTracker,
-    registry: CrateApi,
+    registry: CrateIndex,
 }
 
 impl Backend {
@@ -207,7 +210,7 @@ async fn main() {
     let (service, socket) = LspService::new(|client| Backend {
         client,
         manifests: ManifestTracker::default(),
-        registry: CrateApi::default(),
+        registry: CrateIndex::default(),
     });
     Server::new(stdin, stdout, socket).serve(service).await;
 }
