@@ -14,17 +14,53 @@ struct Fetch {
     pub expires_at: OffsetDateTime,
 }
 
+#[derive(Debug, Clone)]
 pub struct CrateCache {
     crates: Arc<RwLock<HashMap<String, Fetch>>>,
 }
 
+impl Default for CrateCache {
+    fn default() -> Self {
+        std::fs::create_dir_all(CRATE_CACHE_DIR)
+            .expect("Failed to create cargo crate version cache dir.");
+
+        std::fs::write(Path::new(CRATE_CACHE_DIR).join(".gitignore"), "*")
+            .expect("failed to create crates-lsp .gitignore file.");
+
+        CrateCache {
+            crates: Arc::new(RwLock::new(HashMap::default())),
+        }
+    }
+}
+
+pub enum CachedVersion {
+    /// Crate was found, and a latest stable version was determined.
+    Known(Version),
+
+    /// The crate name is unknown, and does not exist in cache, nor
+    /// do we know if the crate might be present in an upstream registry.
+    Unknown,
+
+    /// Crate was looked up in upstream registries, and was not found.
+    DoesNotExist,
+}
+
+impl From<Option<Version>> for CachedVersion {
+    fn from(value: Option<Version>) -> Self {
+        match value {
+            Some(version) => CachedVersion::Known(version),
+            None => CachedVersion::DoesNotExist,
+        }
+    }
+}
+
 impl CrateCache {
-    pub async fn get(&self, crate_name: &str) -> Option<Version> {
+    pub async fn get(&self, crate_name: &str) -> CachedVersion {
         // Check the in-memory cache first.
         if let Some(cached) = self.crates.read().await.get(crate_name).cloned() {
             // Only return the cached result if it is still valid.
             if OffsetDateTime::now_utc() < cached.expires_at {
-                return cached.version;
+                return cached.version.into();
             }
         };
 
@@ -37,12 +73,12 @@ impl CrateCache {
                     self.put(crate_name, fetch.version.clone(), fetch.expires_at)
                         .await;
 
-                    return fetch.version;
+                    return fetch.version.into();
                 }
             }
         }
 
-        None
+        CachedVersion::Unknown
     }
 
     pub async fn put(

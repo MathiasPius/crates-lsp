@@ -1,20 +1,20 @@
+use crates::cache::CrateCache;
+use crates::sparse::CrateIndex;
+use crates::CrateLookup;
 use parse::{DependencyVersion, ManifestTracker};
-use registry::CrateApi;
-use sparse::CrateIndex;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
 mod crates;
 mod parse;
-mod registry;
-mod sparse;
 
 #[derive(Debug, Clone)]
 struct Backend {
     client: Client,
     manifests: ManifestTracker,
     registry: CrateIndex,
+    cache: CrateCache,
 }
 
 impl Backend {
@@ -29,7 +29,10 @@ impl Backend {
             .collect();
 
         // Get the newest version of each crate that appears in the manifest.
-        let newest_packages = self.registry.fetch_versions(&dependency_names).await;
+        let newest_packages = self
+            .registry
+            .fetch_versions(self.cache.clone(), &dependency_names)
+            .await;
 
         // Produce diagnostic hints for each crate where we might be helpful.
         let diagnostics: Vec<_> = packages
@@ -175,7 +178,10 @@ impl LanguageServer for Backend {
             return Ok(None);
         };
 
-        let packages = self.registry.fetch_versions(&[&dependency.name]).await;
+        let packages = self
+            .registry
+            .fetch_versions(self.cache.clone(), &[&dependency.name])
+            .await;
 
         if let Some(Some(newest_version)) = packages.get(&dependency.name) {
             let specified_version = dependency.version.as_ref().unwrap().to_string();
@@ -211,6 +217,7 @@ async fn main() {
         client,
         manifests: ManifestTracker::default(),
         registry: CrateIndex::default(),
+        cache: CrateCache::default(),
     });
     Server::new(stdin, stdout, socket).serve(service).await;
 }
