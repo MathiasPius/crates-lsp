@@ -39,7 +39,6 @@ pub trait CrateLookup: Clone + Send + 'static {
         crate_names: &[&str],
     ) -> HashMap<String, Option<Version>> {
         let crate_names: Vec<_> = crate_names.iter().map(|name| name.to_string()).collect();
-        //let crate_names: HashSet<&str> = HashSet::from_iter(crate_names.iter().copied());
 
         let mut versions = HashMap::new();
 
@@ -79,6 +78,7 @@ pub trait CrateLookup: Clone + Send + 'static {
             // Set 24h expiration regardless of whether a package was found or not.
             let expires_at = OffsetDateTime::now_utc().saturating_add(Self::time_to_live(&version));
 
+            // Store the result in the cache.
             cache.put(&name, version.clone(), expires_at).await;
 
             versions.insert(name, version);
