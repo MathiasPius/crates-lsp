@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, path::Path, sync::Arc};
 
 use semver::Version;
 use serde::{Deserialize, Serialize};
@@ -22,6 +22,7 @@ impl CrateCache {
     pub async fn get(&self, crate_name: &str) -> Option<Version> {
         // Check the in-memory cache first.
         if let Some(cached) = self.crates.read().await.get(crate_name).cloned() {
+            // Only return the cached result if it is still valid.
             if OffsetDateTime::now_utc() < cached.expires_at {
                 return cached.version;
             }
@@ -50,12 +51,20 @@ impl CrateCache {
         version: Option<Version>,
         expires_at: OffsetDateTime,
     ) {
-        self.crates.write().await.insert(
-            crate_name.to_string(),
-            Fetch {
-                version,
-                expires_at,
-            },
-        );
+        let fetch = Fetch {
+            version,
+            expires_at,
+        };
+
+        std::fs::write(
+            Path::new(CRATE_CACHE_DIR).join(crate_name),
+            serde_json::to_string(&fetch).as_deref().unwrap_or("{}"),
+        )
+        .unwrap();
+
+        self.crates
+            .write()
+            .await
+            .insert(crate_name.to_string(), fetch);
     }
 }
