@@ -14,9 +14,14 @@ use self::cache::{CachedVersion, CrateCache};
 pub enum CrateError {
     NoVersionsFound,
     InvalidCrateName(String),
-    Http(hyper::http::Error),
-    Hyper(hyper::Error),
+    Transport(Box<dyn std::error::Error + Send>),
     Deserialization(serde_json::Error),
+}
+
+impl CrateError {
+    pub fn transport(error: impl std::error::Error + Send + 'static) -> Self {
+        CrateError::Transport(Box::new(error))
+    }
 }
 
 #[async_trait]

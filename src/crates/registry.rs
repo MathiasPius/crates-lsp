@@ -13,26 +13,9 @@ use tokio::sync::{mpsc, RwLock};
 
 type HyperClient = hyper::Client<HttpsConnector<HttpConnector>>;
 
-const CRATE_CACHE_DIR: &str = "./.lapce/plugins/crates-lsp/crates.io";
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct Fetch {
-    pub version: Option<Version>,
-    #[serde(with = "time::serde::iso8601")]
-    pub timestamp: OffsetDateTime,
-}
-
 #[derive(Debug, Clone)]
 pub struct CrateApi {
     client: HyperClient,
-    crates: Arc<RwLock<HashMap<String, Fetch>>>,
-}
-
-#[derive(Debug)]
-enum CrateError {
-    Http(hyper::http::Error),
-    Hyper(hyper::Error),
-    Deserialization(serde_json::Error),
 }
 
 impl CrateApi {

@@ -35,14 +35,14 @@ impl CrateLookup for CrateIndex {
                     )
                     .header("Accept", "application/json")
                     .body(Body::empty())
-                    .map_err(CrateError::Http)?,
+                    .map_err(CrateError::transport)?,
             )
             .await
-            .map_err(CrateError::Hyper)?;
+            .map_err(CrateError::transport)?;
 
         let body = hyper::body::to_bytes(response.into_body())
             .await
-            .map_err(CrateError::Hyper)?;
+            .map_err(CrateError::transport)?;
 
         let stringified = String::from_utf8_lossy(&body);
 
