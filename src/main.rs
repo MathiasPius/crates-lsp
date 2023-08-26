@@ -1,3 +1,4 @@
+use crates::api::CrateApi;
 use crates::cache::CrateCache;
 use crates::sparse::CrateIndex;
 use crates::CrateLookup;
@@ -13,7 +14,8 @@ mod parse;
 struct Backend {
     client: Client,
     manifests: ManifestTracker,
-    registry: CrateIndex,
+    api: CrateApi,
+    sparse: CrateIndex,
     cache: CrateCache,
 }
 
@@ -30,7 +32,7 @@ impl Backend {
 
         // Get the newest version of each crate that appears in the manifest.
         let newest_packages = self
-            .registry
+            .sparse
             .fetch_versions(self.cache.clone(), &dependency_names)
             .await;
 
@@ -179,7 +181,7 @@ impl LanguageServer for Backend {
         };
 
         let packages = self
-            .registry
+            .sparse
             .fetch_versions(self.cache.clone(), &[&dependency.name])
             .await;
 
@@ -216,7 +218,8 @@ async fn main() {
     let (service, socket) = LspService::new(|client| Backend {
         client,
         manifests: ManifestTracker::default(),
-        registry: CrateIndex::default(),
+        sparse: CrateIndex::default(),
+        api: CrateApi::default(),
         cache: CrateCache::default(),
     });
     Server::new(stdin, stdout, socket).serve(service).await;
