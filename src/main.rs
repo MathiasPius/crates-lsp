@@ -3,6 +3,7 @@ use crates::cache::CrateCache;
 use crates::sparse::CrateIndex;
 use crates::CrateLookup;
 use parse::{DependencyVersion, ManifestTracker};
+use serde::Deserialize;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
@@ -17,6 +18,12 @@ struct Backend {
     api: CrateApi,
     sparse: CrateIndex,
     cache: CrateCache,
+}
+
+#[derive(Default, Debug, Clone, Deserialize)]
+pub struct Settings {
+    #[serde(rename = "useApi", default)]
+    pub use_api: Option<bool>,
 }
 
 impl Backend {
@@ -84,7 +91,13 @@ impl Backend {
 
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
-    async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
+    async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
+        let settings: Settings = params
+            .initialization_options
+            .map(|options| serde_json::from_value(options).ok())
+            .flatten()
+            .unwrap_or_default();
+
         Ok(InitializeResult {
             server_info: None,
             capabilities: ServerCapabilities {
