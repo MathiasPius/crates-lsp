@@ -1,9 +1,12 @@
+use std::sync::Arc;
+
 use crates::api::CrateApi;
 use crates::cache::CrateCache;
 use crates::sparse::CrateIndex;
 use crates::CrateLookup;
 use parse::{DependencyVersion, ManifestTracker};
 use serde::Deserialize;
+use tokio::sync::RwLock;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
@@ -14,16 +17,27 @@ mod parse;
 #[derive(Debug, Clone)]
 struct Backend {
     client: Client,
+    settings: Settings,
     manifests: ManifestTracker,
     api: CrateApi,
     sparse: CrateIndex,
     cache: CrateCache,
 }
 
-#[derive(Default, Debug, Clone, Deserialize)]
+#[derive(Default, Debug, Clone)]
 pub struct Settings {
+    inner: Arc<RwLock<InnerSettings>>,
+}
+
+#[derive(Default, Debug, Clone, Deserialize)]
+pub struct LspSettings {
     #[serde(rename = "useApi", default)]
     pub use_api: Option<bool>,
+}
+
+#[derive(Default, Debug, Clone, Deserialize)]
+pub struct InnerSettings {
+    lsp: LspSettings,
 }
 
 impl Backend {
@@ -37,11 +51,25 @@ impl Backend {
             .map(|dependency| dependency.name.as_str())
             .collect();
 
+        let use_api = self
+            .settings
+            .inner
+            .read()
+            .await
+            .lsp
+            .use_api
+            .unwrap_or_default();
+
         // Get the newest version of each crate that appears in the manifest.
-        let newest_packages = self
-            .sparse
-            .fetch_versions(self.cache.clone(), &dependency_names)
-            .await;
+        let newest_packages = if use_api {
+            self.api
+                .fetch_versions(self.cache.clone(), &dependency_names)
+                .await
+        } else {
+            self.sparse
+                .fetch_versions(self.cache.clone(), &dependency_names)
+                .await
+        };
 
         // Produce diagnostic hints for each crate where we might be helpful.
         let diagnostics: Vec<_> = packages
@@ -92,11 +120,17 @@ impl Backend {
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
     async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
-        let settings: Settings = params
-            .initialization_options
-            .map(|options| serde_json::from_value(options).ok())
-            .flatten()
-            .unwrap_or_default();
+        {
+            // Populate language server settings.
+            let settings: InnerSettings = params
+                .initialization_options
+                .map(|options| serde_json::from_value(options).ok())
+                .flatten()
+                .unwrap_or_default();
+
+            let mut internal_settings = self.settings.inner.write().await;
+            internal_settings.lsp.use_api = settings.lsp.use_api;
+        };
 
         Ok(InitializeResult {
             server_info: None,
@@ -231,6 +265,7 @@ async fn main() {
     let (service, socket) = LspService::new(|client| Backend {
         client,
         manifests: ManifestTracker::default(),
+        settings: Settings::default(),
         sparse: CrateIndex::default(),
         api: CrateApi::default(),
         cache: CrateCache::default(),
