@@ -124,8 +124,7 @@ impl LanguageServer for Backend {
             // Populate language server settings.
             let settings: InnerSettings = params
                 .initialization_options
-                .map(|options| serde_json::from_value(options).ok())
-                .flatten()
+                .and_then(|options| serde_json::from_value(options).ok())
                 .unwrap_or_default();
 
             let mut internal_settings = self.settings.inner.write().await;
