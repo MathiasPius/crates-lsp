@@ -15,6 +15,10 @@ pub struct CrateApi {
 
 #[async_trait]
 impl CrateLookup for CrateApi {
+    fn client(&self) -> &crate::crates::HyperClient {
+        &self.client
+    }
+
     async fn get_latest_version(self, crate_name: String) -> Result<Version, CrateError> {
         let response = self
             .client

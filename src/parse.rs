@@ -5,17 +5,66 @@ use tokio::sync::RwLock;
 use tower_lsp::lsp_types::{Position, Range, Url};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Dependency {
+pub enum Dependency {
+    /// e.g: anyho
+    Partial {
+        name: String,
+        line: u32,
+    },
+    WithVersion(DependencyWithVersion),
+    /// e.g: anyhow = { git = ".."}
+    Other {
+        name: String,
+    },
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DependencyWithVersion {
     pub name: String,
-    pub version: Option<DependencyVersion>,
+    pub version: DependencyVersion,
+}
+// pub struct Dependency {
+//     pub name: String,
+//     pub version: Option<DependencyVersion>,
+// }
+
+impl Dependency {
+    pub fn name(&self) -> Option<&String> {
+        match self {
+            Dependency::Partial { .. } => None,
+            Dependency::WithVersion(dep) => Some(&dep.name),
+            Dependency::Other { name } => Some(name),
+        }
+    }
+
+    pub fn name_mut(&mut self) -> Option<&mut String> {
+        match self {
+            Dependency::Partial { .. } => None,
+            Dependency::WithVersion(dep) => Some(&mut dep.name),
+            Dependency::Other { name } => Some(name),
+        }
+    }
+
+    pub fn version_mut(&mut self) -> Option<&mut DependencyVersion> {
+        match self {
+            Dependency::Partial { .. } => None,
+            Dependency::WithVersion(dep) => Some(&mut dep.version),
+            Dependency::Other { .. } => None,
+        }
+    }
 }
 
 impl Display for Dependency {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(version) = &self.version {
-            write!(f, "{} = \"{}\"", self.name, version)
-        } else {
-            write!(f, "{} = \"?\"", self.name)
+        match self {
+            Dependency::Partial { name, .. } => {
+                write!(f, "{} = \"?\"", name)
+            }
+            Dependency::WithVersion(dep) => {
+                write!(f, "{} = \"{}\"", dep.name, dep.version)
+            }
+            Dependency::Other { name } => {
+                write!(f, "{} = \"?\"", name)
+            }
         }
     }
 }
@@ -79,17 +128,17 @@ enum Line<'a> {
         name: &'a str,
         start: usize,
         end: usize,
-        version: Option<&'a str>,
+        version: &'a str,
     },
     Partial {
         name: &'a str,
         start: usize,
-        version: Option<&'a str>,
+        version: &'a str,
     },
 }
 
 impl<'a> Line<'a> {
-    pub fn parse(line: &'a str) -> Option<Dependency> {
+    pub fn parse(line: &'a str, line_no: usize) -> Option<Dependency> {
         use Line::*;
         let mut state = Start;
 
@@ -147,14 +196,14 @@ impl<'a> Line<'a> {
                         name,
                         start,
                         end: i,
-                        version: Some(&line[start..i]),
+                        version: &line[start..i],
                     },
                     'a'..='z' | 'A'..='Z' => {
                         if first {
                             Partial {
                                 name,
                                 start,
-                                version: Some(&line[start..i]),
+                                version: &line[start..i],
                             }
                         } else {
                             VersionSelector {
@@ -177,7 +226,7 @@ impl<'a> Line<'a> {
                     _ => Partial {
                         name,
                         start,
-                        version: Some(&line[start..i]),
+                        version: &line[start..i],
                     },
                 },
             };
@@ -189,61 +238,67 @@ impl<'a> Line<'a> {
                 version,
                 start,
                 end,
-            } => Some(Dependency {
-                name: name.to_string(),
-                version: if let Some(version) = version {
-                    let version = version[1..].trim();
-
-                    if let Ok(version) = VersionReq::parse(version) {
-                        Some(DependencyVersion::Complete {
-                            version,
-                            range: Range::new(
-                                Position::new(0, start as u32),
-                                Position::new(0, end as u32),
-                            ),
-                        })
-                    } else {
-                        Some(DependencyVersion::Partial {
-                            version: version.to_string(),
-                            range: Range::new(
-                                Position::new(0, start as u32),
-                                Position::new(0, end as u32),
-                            ),
-                        })
+            } => {
+                let version = version[1..].trim();
+                let version = if let Ok(version) = VersionReq::parse(version) {
+                    DependencyVersion::Complete {
+                        version,
+                        range: Range::new(
+                            Position::new(0, start as u32),
+                            Position::new(0, end as u32),
+                        ),
                     }
                 } else {
-                    None
-                },
-            }),
+                    DependencyVersion::Partial {
+                        version: version.to_string(),
+                        range: Range::new(
+                            Position::new(0, start as u32),
+                            Position::new(0, end as u32),
+                        ),
+                    }
+                };
+                Some(Dependency::WithVersion(DependencyWithVersion {
+                    name: name.to_string(),
+                    version,
+                }))
+            }
             Partial {
                 name,
                 version,
                 start,
-            } => Some(Dependency {
-                name: name.to_string(),
-                version: version.map(|version| DependencyVersion::Partial {
+            } => {
+                let version = DependencyVersion::Partial {
                     version: version[1..].trim().trim_matches(',').to_string(),
                     range: Range::new(
                         Position::new(0, start as u32),
                         Position::new(0, line.len() as u32),
                     ),
-                }),
-            }),
-            Name { name, .. } | Struct { name, .. } => Some(Dependency {
+                };
+                Some(Dependency::WithVersion(DependencyWithVersion {
+                    name: name.to_string(),
+                    version,
+                }))
+            }
+            Name { name, .. } | Struct { name, .. } => Some(Dependency::Other {
                 name: name.to_string(),
-                version: None,
             }),
-            VersionSelector { name, start, .. } => Some(Dependency {
-                name: name.to_string(),
-                version: Some(DependencyVersion::Partial {
-                    version: line[start + 1..].trim().to_string(),
-                    range: Range::new(
-                        Position::new(0, start as u32),
-                        Position::new(0, line.len() as u32),
-                    ),
-                }),
+            VersionSelector { name, start, .. } => {
+                Some(Dependency::WithVersion(DependencyWithVersion {
+                    name: name.to_string(),
+                    version: DependencyVersion::Partial {
+                        version: line[start + 1..].trim().to_string(),
+                        range: Range::new(
+                            Position::new(0, start as u32),
+                            Position::new(0, line.len() as u32),
+                        ),
+                    },
+                }))
+            }
+            PartialName { start } => Some(Dependency::Partial {
+                name: line[start..].to_string(),
+                line: line_no as u32,
             }),
-            _ => None,
+            Start => None,
         }
     }
 }
@@ -309,9 +364,9 @@ impl ManifestTracker {
                 Dependencies => {
                     // If we're in a generic dependency section, and find a line
                     // which can be parsed as a versioned dependency, push it as a package.
-                    if let Some(mut dependency) = Line::parse(line) {
+                    if let Some(mut dependency) = Line::parse(line, i) {
                         // Line::parse assumes line 0, modify so we have to fix this manually.
-                        if let Some(version) = dependency.version.as_mut() {
+                        if let Some(version) = dependency.version_mut() {
                             version.range_mut().start.line = i as u32;
                             version.range_mut().end.line = i as u32;
                         }
@@ -326,17 +381,21 @@ impl ManifestTracker {
                     // [dependencies.serde]
                     // version = "1"
                     // ```
-                    if let Some(mut dependency) = Line::parse(line) {
-                        if dependency.name != "version" {
+                    if let Some(mut dependency) = Line::parse(line, i) {
+                        if dependency
+                            .name()
+                            .and_then(|x| Some(x != "version"))
+                            .unwrap_or_default()
+                        {
                             continue;
                         } else {
                             // Rename to the package section, since the dependency is currently
                             // named "version" because of the Line::parse logic assuming this is
                             // a regular dependencies section.
-                            dependency.name = name.clone();
+                            dependency.name_mut().and_then(|x| Some(*x = name.clone()));
                         }
                         // Line::parse assumes line 0, modify so we have to fix this manually.
-                        if let Some(version) = dependency.version.as_mut() {
+                        if let Some(version) = dependency.version_mut() {
                             version.range_mut().start.line = i as u32;
                             version.range_mut().end.line = i as u32;
                         }
@@ -373,10 +432,10 @@ mod tests {
     use tower_lsp::lsp_types::Range;
     use tower_lsp::lsp_types::Url;
 
-    use crate::parse::Dependency;
     use crate::parse::DependencyVersion;
     use crate::parse::Line;
     use crate::parse::ManifestTracker;
+    use crate::parse::{Dependency, DependencyWithVersion};
 
     #[tokio::test]
     async fn detect_plain_version() {
@@ -407,12 +466,15 @@ mod tests {
     }
 
     fn matches_complete(line: &str, name: &str, version: &str) {
-        let line = Line::parse(line).unwrap();
+        let line = Line::parse(line, 0).unwrap();
+        let Dependency::WithVersion(line) = line else {
+            panic!("expected complete version selector")
+        };
         let expected_version = VersionReq::parse(version).unwrap();
 
         assert_eq!(line.name, name);
 
-        match line.version.unwrap() {
+        match line.version {
             DependencyVersion::Partial { .. } => panic!("expected complete version selector"),
             DependencyVersion::Complete { version, .. } => {
                 assert_eq!(version, expected_version)
@@ -421,10 +483,13 @@ mod tests {
     }
 
     fn matches_partial(line: &str, name: &str, expected_version: &str) {
-        let line = Line::parse(line).unwrap();
+        let line = Line::parse(line, 0).unwrap();
+        let Dependency::WithVersion(line) = line else {
+            panic!("expected complete version selector")
+        };
         assert_eq!(line.name, name);
 
-        match line.version.unwrap() {
+        match line.version {
             DependencyVersion::Complete { .. } => panic!("expected partial version selector"),
             DependencyVersion::Partial { version, .. } => {
                 assert_eq!(version.as_str(), expected_version)
@@ -488,36 +553,36 @@ mod tests {
         assert_eq!(
             manifests.get(&url).await.unwrap(),
             vec![
-                Dependency {
+                Dependency::WithVersion(DependencyWithVersion {
                     name: "log".to_string(),
-                    version: Some(DependencyVersion::Complete {
+                    version: DependencyVersion::Complete {
                         range: Range {
                             start: Position::new(1, 6),
                             end: Position::new(1, 8)
                         },
                         version: VersionReq::parse("1").unwrap()
-                    })
-                },
-                Dependency {
+                    }
+                }),
+                Dependency::WithVersion(DependencyWithVersion {
                     name: "serde".to_string(),
-                    version: Some(DependencyVersion::Complete {
+                    version: DependencyVersion::Complete {
                         range: Range {
                             start: Position::new(4, 10),
                             end: Position::new(4, 12)
                         },
                         version: VersionReq::parse("1").unwrap()
-                    })
-                },
-                Dependency {
+                    }
+                }),
+                Dependency::WithVersion(DependencyWithVersion {
                     name: "tokio".to_string(),
-                    version: Some(DependencyVersion::Complete {
+                    version: DependencyVersion::Complete {
                         range: Range {
                             start: Position::new(7, 10),
                             end: Position::new(7, 12)
                         },
                         version: VersionReq::parse("1").unwrap()
-                    })
-                }
+                    }
+                })
             ]
         );
     }

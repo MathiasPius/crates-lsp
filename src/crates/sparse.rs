@@ -15,6 +15,10 @@ pub struct CrateIndex {
 
 #[async_trait]
 impl CrateLookup for CrateIndex {
+    fn client(&self) -> &crate::crates::HyperClient {
+        &self.client
+    }
+
     async fn get_latest_version(self, crate_name: String) -> Result<Version, CrateError> {
         let crate_index_path = match crate_name.len() {
             0 => return Err(CrateError::InvalidCrateName(crate_name)),
