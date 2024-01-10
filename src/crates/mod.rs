@@ -5,11 +5,17 @@ pub mod sparse;
 use std::collections::HashMap;
 
 use async_trait::async_trait;
+use hyper::client::HttpConnector;
+use hyper::{Body, Request};
+use hyper_rustls::HttpsConnector;
 use semver::Version;
+use serde::Deserialize;
 use time::OffsetDateTime;
 use tokio::sync::mpsc;
 
 use self::cache::{CachedVersion, CrateCache};
+
+type HyperClient = hyper::Client<HttpsConnector<HttpConnector>>;
 
 #[derive(Debug)]
 pub enum CrateError {
@@ -25,8 +31,49 @@ impl CrateError {
     }
 }
 
+#[derive(Deserialize)]
+pub struct Crate {
+    pub name: String,
+}
+
+#[derive(Deserialize)]
+struct Crates {
+    pub crates: Vec<Crate>,
+}
+
 #[async_trait]
 pub trait CrateLookup: Clone + Send + 'static {
+    fn client(&self) -> &HyperClient;
+    async fn search_crates(&self, crate_name: &String) -> Result<Vec<Crate>, CrateError> {
+        let response = self
+            .client()
+            .request(
+                Request::builder()
+                    .uri(&format!(
+                        "https://crates.io/api/v1/crates?q={}&per_page=5",
+                        crate_name
+                    ))
+                    .header(
+                        "User-Agent",
+                        "crates-lsp (github.com/MathiasPius/crates-lsp)",
+                    )
+                    .header("Accept", "application/json")
+                    .body(Body::empty())
+                    .map_err(CrateError::transport)?,
+            )
+            .await
+            .map_err(CrateError::transport)?;
+        let body = hyper::body::to_bytes(response.into_body())
+            .await
+            .map_err(CrateError::transport)?;
+
+        let stringified = String::from_utf8_lossy(&body);
+        let details: Crates =
+            serde_json::from_str(&stringified).map_err(CrateError::Deserialization)?;
+
+        Ok(details.crates)
+    }
+
     async fn get_latest_version(self, crate_name: String) -> Result<Version, CrateError>;
 
     // How long to cache a result for.

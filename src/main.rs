@@ -1,3 +1,4 @@
+use crate::parse::{Dependency, DependencyWithVersion};
 use crates::api::CrateApi;
 use crates::cache::CrateCache;
 use crates::sparse::CrateIndex;
@@ -28,61 +29,66 @@ impl Backend {
 
         // Retrieve just the package names, so we can fetch the latest
         // versions via the crate registry.
-        let dependency_names: Vec<&str> = packages
+        let dependency_with_versions: Vec<&DependencyWithVersion> = packages
             .iter()
-            .map(|dependency| dependency.name.as_str())
+            .filter_map(|dependency| match dependency {
+                Dependency::Partial { .. } => None,
+                Dependency::WithVersion(dep) => Some(dep),
+                Dependency::Other { .. } => None,
+            })
             .collect();
 
+        if dependency_with_versions.is_empty() {
+            return Vec::new();
+        }
+
+        let crate_names: Vec<&str> = dependency_with_versions
+            .clone()
+            .into_iter()
+            .map(|x| x.name.as_str())
+            .collect();
         // Get the newest version of each crate that appears in the manifest.
         let newest_packages = if self.settings.use_api().await {
             self.api
-                .fetch_versions(self.cache.clone(), &dependency_names)
+                .fetch_versions(self.cache.clone(), &crate_names)
                 .await
         } else {
             self.sparse
-                .fetch_versions(self.cache.clone(), &dependency_names)
+                .fetch_versions(self.cache.clone(), &crate_names)
                 .await
         };
 
         // Produce diagnostic hints for each crate where we might be helpful.
-        let diagnostics: Vec<_> = packages
+        let diagnostics: Vec<_> = dependency_with_versions
             .into_iter()
-            .filter_map(|dependency| {
-                if let Some(version) = dependency.version {
-                    if let Some(Some(newest_version)) = newest_packages.get(&dependency.name) {
-                        match version {
-                            DependencyVersion::Complete { range, version } => {
-                                if !version.matches(newest_version) {
-                                    return Some(Diagnostic::new_simple(
-                                        range,
-                                        format!("{}: {newest_version}", &dependency.name),
-                                    ));
-                                } else {
-                                    let range = Range {
-                                        start: Position::new(range.start.line, 0),
-                                        end: Position::new(range.start.line, 0),
-                                    };
-
-                                    return Some(Diagnostic::new_simple(range, "✓".to_string()));
-                                }
-                            }
-
-                            DependencyVersion::Partial { range, .. } => {
-                                return Some(Diagnostic::new_simple(
-                                    range,
+            .map(|dependency| {
+                if let Some(Some(newest_version)) = newest_packages.get(&dependency.name) {
+                    match &dependency.version {
+                        DependencyVersion::Complete { range, version } => {
+                            if !version.matches(newest_version) {
+                                Diagnostic::new_simple(
+                                    *range,
                                     format!("{}: {newest_version}", &dependency.name),
-                                ));
+                                )
+                            } else {
+                                let range = Range {
+                                    start: Position::new(range.start.line, 0),
+                                    end: Position::new(range.start.line, 0),
+                                };
+                                Diagnostic::new_simple(range, "✓".to_string())
                             }
                         }
-                    } else {
-                        return Some(Diagnostic::new_simple(
-                            version.range(),
-                            format!("{}: Unknown crate", &dependency.name),
-                        ));
+                        DependencyVersion::Partial { range, .. } => Diagnostic::new_simple(
+                            *range,
+                            format!("{}: {newest_version}", &dependency.name),
+                        ),
                     }
+                } else {
+                    Diagnostic::new_simple(
+                        dependency.version.range(),
+                        format!("{}: Unknown crate", &dependency.name),
+                    )
                 }
-
-                None
             })
             .collect();
 
@@ -182,43 +188,75 @@ impl LanguageServer for Backend {
             return Ok(None);
         };
 
-        let Some(dependency) = dependencies.into_iter().find(|dependency| {
-            dependency.version.as_ref().is_some_and(|version| {
-                version.range().start.line == cursor.line
-                    && version.range().start.character <= cursor.character
-                    && version.range().end.character >= cursor.character
+        let Some(dependency) = dependencies
+            .into_iter()
+            .find(|dependency| match dependency {
+                Dependency::Partial { line, .. } => *line == cursor.line,
+                Dependency::WithVersion(dep) => {
+                    dep.version.range().start.line == cursor.line
+                        && dep.version.range().start.character <= cursor.character
+                        && dep.version.range().end.character >= cursor.character
+                }
+                Dependency::Other { .. } => false,
             })
-        }) else {
+        else {
             return Ok(None);
         };
 
-        let packages = self
-            .sparse
-            .fetch_versions(self.cache.clone(), &[&dependency.name])
-            .await;
+        match dependency {
+            Dependency::Partial { name, .. } => {
+                let Ok(crates) = self.sparse.search_crates(&name).await else {
+                    return Ok(None);
+                };
+                let range = Range::new(Position::new(cursor.line, 0), cursor);
+                Ok(Some(CompletionResponse::Array(
+                    crates
+                        .into_iter()
+                        .map(|x| CompletionItem {
+                            text_edit: Some(CompletionTextEdit::Edit(TextEdit::new(
+                                range,
+                                x.name.clone(),
+                            ))),
+                            label: x.name,
+                            ..CompletionItem::default()
+                        })
+                        .collect(),
+                )))
+            }
+            Dependency::WithVersion(dependency) => {
+                let packages = self
+                    .sparse
+                    .fetch_versions(self.cache.clone(), &[&dependency.name])
+                    .await;
 
-        if let Some(Some(newest_version)) = packages.get(&dependency.name) {
-            let specified_version = dependency.version.as_ref().unwrap().to_string();
-            let specified_version = &specified_version[0..specified_version.len() - 1];
+                if let Some(Some(newest_version)) = packages.get(&dependency.name) {
+                    let specified_version = dependency.version.to_string();
+                    let specified_version = &specified_version[0..specified_version.len() - 1];
 
-            let newest_version = newest_version.to_string();
+                    let newest_version = newest_version.to_string();
 
-            let truncated_version = newest_version
-                .as_str()
-                .strip_prefix(
-                    specified_version.trim_start_matches(&['<', '>', '=', '^', '~'] as &[_]),
-                )
-                .unwrap_or(&newest_version)
-                .to_string();
+                    let truncated_version = newest_version
+                        .as_str()
+                        .strip_prefix(
+                            specified_version
+                                .trim_start_matches(&['<', '>', '=', '^', '~'] as &[_]),
+                        )
+                        .unwrap_or(&newest_version)
+                        .to_string();
 
-            Ok(Some(CompletionResponse::Array(vec![CompletionItem {
-                insert_text: Some(truncated_version),
-                label: newest_version,
+                    Ok(Some(CompletionResponse::Array(vec![CompletionItem {
+                        insert_text: Some(truncated_version.clone()),
+                        label: newest_version.clone(),
 
-                ..CompletionItem::default()
-            }])))
-        } else {
-            Ok(None)
+                        ..CompletionItem::default()
+                    }])))
+                } else {
+                    Ok(None)
+                }
+            }
+            Dependency::Other { .. } => {
+                return Ok(None);
+            }
         }
     }
 }
