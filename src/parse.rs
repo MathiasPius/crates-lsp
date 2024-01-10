@@ -384,7 +384,7 @@ impl ManifestTracker {
                     if let Some(mut dependency) = Line::parse(line, i) {
                         if dependency
                             .name()
-                            .and_then(|x| Some(x != "version"))
+                            .map(|x| x != "version")
                             .unwrap_or_default()
                         {
                             continue;
@@ -392,7 +392,9 @@ impl ManifestTracker {
                             // Rename to the package section, since the dependency is currently
                             // named "version" because of the Line::parse logic assuming this is
                             // a regular dependencies section.
-                            dependency.name_mut().and_then(|x| Some(*x = name.clone()));
+                            if let Some(x) = dependency.name_mut() {
+                                *x = name.clone()
+                            }
                         }
                         // Line::parse assumes line 0, modify so we have to fix this manually.
                         if let Some(version) = dependency.version_mut() {

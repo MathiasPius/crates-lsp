@@ -38,7 +38,7 @@ impl Backend {
             })
             .collect();
 
-        if dependency_with_versions.len() == 0 {
+        if dependency_with_versions.is_empty() {
             return Vec::new();
         }
 
@@ -61,36 +61,33 @@ impl Backend {
         // Produce diagnostic hints for each crate where we might be helpful.
         let diagnostics: Vec<_> = dependency_with_versions
             .into_iter()
-            .filter_map(|dependency| {
+            .map(|dependency| {
                 if let Some(Some(newest_version)) = newest_packages.get(&dependency.name) {
                     match &dependency.version {
                         DependencyVersion::Complete { range, version } => {
                             if !version.matches(newest_version) {
-                                return Some(Diagnostic::new_simple(
-                                    range.clone(),
+                                Diagnostic::new_simple(
+                                    *range,
                                     format!("{}: {newest_version}", &dependency.name),
-                                ));
+                                )
                             } else {
                                 let range = Range {
                                     start: Position::new(range.start.line, 0),
                                     end: Position::new(range.start.line, 0),
                                 };
-
-                                return Some(Diagnostic::new_simple(range, "✓".to_string()));
+                                Diagnostic::new_simple(range, "✓".to_string())
                             }
                         }
-                        DependencyVersion::Partial { range, .. } => {
-                            return Some(Diagnostic::new_simple(
-                                range.clone(),
-                                format!("{}: {newest_version}", &dependency.name),
-                            ));
-                        }
+                        DependencyVersion::Partial { range, .. } => Diagnostic::new_simple(
+                            *range,
+                            format!("{}: {newest_version}", &dependency.name),
+                        ),
                     }
                 } else {
-                    return Some(Diagnostic::new_simple(
+                    Diagnostic::new_simple(
                         dependency.version.range(),
                         format!("{}: Unknown crate", &dependency.name),
-                    ));
+                    )
                 }
             })
             .collect();
@@ -194,22 +191,11 @@ impl LanguageServer for Backend {
         let Some(dependency) = dependencies
             .into_iter()
             .find(|dependency| match dependency {
-                Dependency::Partial { line, .. } => {
-                    if *line == cursor.line {
-                        true
-                    } else {
-                        false
-                    }
-                }
+                Dependency::Partial { line, .. } => *line == cursor.line,
                 Dependency::WithVersion(dep) => {
-                    if dep.version.range().start.line == cursor.line
+                    dep.version.range().start.line == cursor.line
                         && dep.version.range().start.character <= cursor.character
                         && dep.version.range().end.character >= cursor.character
-                    {
-                        true
-                    } else {
-                        false
-                    }
                 }
                 Dependency::Other { .. } => false,
             })
