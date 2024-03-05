@@ -1,19 +1,15 @@
 use async_trait::async_trait;
 use http_body_util::{BodyExt, Empty};
-use hyper::{body::Bytes, Request};
-use hyper_rustls::HttpsConnector;
-use hyper_util::{
-    client::legacy::{connect::HttpConnector, Client},
-    rt::TokioExecutor,
-};
+use hyper::Request;
+use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use semver::Version;
 use serde::Deserialize;
 
-use super::{CrateError, CrateLookup};
+use super::{CrateError, CrateLookup, HyperClient};
 
 #[derive(Debug, Clone)]
 pub struct CrateIndex {
-    client: Client<HttpsConnector<HttpConnector>, Empty<Bytes>>,
+    client: HyperClient,
 }
 
 #[async_trait]

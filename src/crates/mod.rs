@@ -5,9 +5,11 @@ pub mod sparse;
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use hyper::client::HttpConnector;
-use hyper::{Body, Request};
+use http_body_util::{BodyExt, Empty};
+use hyper::body::Bytes;
+use hyper::Request;
 use hyper_rustls::HttpsConnector;
+use hyper_util::client::legacy::{connect::HttpConnector, Client};
 use semver::Version;
 use serde::Deserialize;
 use time::OffsetDateTime;
@@ -15,7 +17,7 @@ use tokio::sync::mpsc;
 
 use self::cache::{CachedVersion, CrateCache};
 
-type HyperClient = hyper::Client<HttpsConnector<HttpConnector>>;
+type HyperClient = Client<HttpsConnector<HttpConnector>, Empty<Bytes>>;
 
 #[derive(Debug)]
 pub enum CrateError {
@@ -58,14 +60,18 @@ pub trait CrateLookup: Clone + Send + 'static {
                         "crates-lsp (github.com/MathiasPius/crates-lsp)",
                     )
                     .header("Accept", "application/json")
-                    .body(Body::empty())
+                    .body(Empty::default())
                     .map_err(CrateError::transport)?,
             )
             .await
             .map_err(CrateError::transport)?;
-        let body = hyper::body::to_bytes(response.into_body())
+
+        let body = response
+            .into_body()
+            .collect()
             .await
-            .map_err(CrateError::transport)?;
+            .map_err(CrateError::transport)?
+            .to_bytes();
 
         let stringified = String::from_utf8_lossy(&body);
         let details: Crates =
