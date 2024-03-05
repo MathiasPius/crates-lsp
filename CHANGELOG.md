@@ -1,5 +1,12 @@
 # Change Log
 
+## 0.1.0
+
+### Fixed
+* Update to hyper 0.x to 1.2.0
+* Update mio dependency to resolve [CVE-2024-27308](https://github.com/advisories/GHSA-r8w9-5wcg-vfj7/dependabot)
+* Switch to rustls webpki roots instead of native ones. Potentially breaking change.
+
 ## 0.0.4
 
 ### Added
