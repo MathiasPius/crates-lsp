@@ -1,16 +1,19 @@
 use async_trait::async_trait;
-use hyper::{client::HttpConnector, Body, Request};
+use http_body_util::{BodyExt, Empty};
+use hyper::{body::Bytes, Request};
 use hyper_rustls::HttpsConnector;
+use hyper_util::{
+    client::legacy::{connect::HttpConnector, Client},
+    rt::TokioExecutor,
+};
 use semver::Version;
 use serde::Deserialize;
 
 use super::{CrateError, CrateLookup};
 
-type HyperClient = hyper::Client<HttpsConnector<HttpConnector>>;
-
 #[derive(Debug, Clone)]
 pub struct CrateApi {
-    client: HyperClient,
+    client: Client<HttpsConnector<HttpConnector>, Empty<Bytes>>,
 }
 
 #[async_trait]
@@ -30,15 +33,18 @@ impl CrateLookup for CrateApi {
                         "crates-lsp (github.com/MathiasPius/crates-lsp)",
                     )
                     .header("Accept", "application/json")
-                    .body(Body::empty())
+                    .body(Empty::new())
                     .map_err(CrateError::transport)?,
             )
             .await
             .map_err(CrateError::transport)?;
 
-        let body = hyper::body::to_bytes(response.into_body())
+        let body = response
+            .into_body()
+            .collect()
             .await
-            .map_err(CrateError::transport)?;
+            .map_err(CrateError::transport)?
+            .to_bytes();
 
         let stringified = String::from_utf8_lossy(&body);
 
@@ -63,11 +69,11 @@ impl CrateLookup for CrateApi {
 impl Default for CrateApi {
     fn default() -> Self {
         let https = hyper_rustls::HttpsConnectorBuilder::new()
-            .with_native_roots()
+            .with_webpki_roots()
             .https_only()
             .enable_http1()
             .build();
-        let client = hyper::Client::builder().build(https);
+        let client = Client::builder(TokioExecutor::new()).build(https);
 
         CrateApi { client }
     }
