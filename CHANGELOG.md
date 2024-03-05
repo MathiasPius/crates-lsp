@@ -7,6 +7,11 @@
 * Update mio dependency to resolve [CVE-2024-27308](https://github.com/advisories/GHSA-r8w9-5wcg-vfj7/dependabot)
 * Switch to rustls webpki roots instead of native ones. Potentially breaking change.
 
+## 0.0.6
+
+### Added
+* Added crate name search courtesy of @jm-observer
+
 ## 0.0.4
 
 ### Added
