@@ -66,27 +66,50 @@ impl Backend {
                     match &dependency.version {
                         DependencyVersion::Complete { range, version } => {
                             if !version.matches(newest_version) {
-                                Diagnostic::new_simple(
+                                Diagnostic::new(
                                     *range,
+                                    Some(DiagnosticSeverity::INFORMATION),
+                                    None,
+                                    None,
                                     format!("{}: {newest_version}", &dependency.name),
+                                    None,
+                                    None,
                                 )
                             } else {
                                 let range = Range {
                                     start: Position::new(range.start.line, 0),
                                     end: Position::new(range.start.line, 0),
                                 };
-                                Diagnostic::new_simple(range, "✓".to_string())
+                                Diagnostic::new(
+                                    range,
+                                    Some(DiagnosticSeverity::HINT),
+                                    None,
+                                    None,
+                                    "✓".to_string(),
+                                    None,
+                                    None,
+                                )
                             }
                         }
-                        DependencyVersion::Partial { range, .. } => Diagnostic::new_simple(
+                        DependencyVersion::Partial { range, .. } => Diagnostic::new(
                             *range,
+                            Some(DiagnosticSeverity::INFORMATION),
+                            None,
+                            None,
                             format!("{}: {newest_version}", &dependency.name),
+                            None,
+                            None,
                         ),
                     }
                 } else {
-                    Diagnostic::new_simple(
+                    Diagnostic::new(
                         dependency.version.range(),
+                        Some(DiagnosticSeverity::WARNING),
+                        None,
+                        None,
                         format!("{}: Unknown crate", &dependency.name),
+                        None,
+                        None,
                     )
                 }
             })
