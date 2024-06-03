@@ -573,7 +573,7 @@ mod tests {
                     name: "log".to_string(),
                     version: DependencyVersion::Complete {
                         range: Range {
-                            start: Position::new(1, 6),
+                            start: Position::new(1, 7),
                             end: Position::new(1, 8)
                         },
                         version: VersionReq::parse("1").unwrap()
@@ -583,7 +583,7 @@ mod tests {
                     name: "serde".to_string(),
                     version: DependencyVersion::Complete {
                         range: Range {
-                            start: Position::new(4, 10),
+                            start: Position::new(4, 11),
                             end: Position::new(4, 12)
                         },
                         version: VersionReq::parse("1").unwrap()
@@ -593,7 +593,7 @@ mod tests {
                     name: "tokio".to_string(),
                     version: DependencyVersion::Complete {
                         range: Range {
-                            start: Position::new(7, 10),
+                            start: Position::new(7, 11),
                             end: Position::new(7, 12)
                         },
                         version: VersionReq::parse("1").unwrap()
