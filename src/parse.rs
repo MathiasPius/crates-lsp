@@ -300,6 +300,20 @@ impl<'a> Line<'a> {
             }),
             Start => None,
         }
+        // very hacky should probably fix parsing
+        .map(|mut d| match d {
+            Dependency::WithVersion(ref mut v) => {
+                let range = v.version.range_mut();
+                if let Some('"') = line.chars().nth(range.start.character as usize) {
+                    range.start.character += 1;
+                }
+                if let Some('"') = line.chars().nth(range.end.character as usize + 1) {
+                    range.end.character -= 1;
+                }
+                d
+            }
+            _ => d,
+        })
     }
 }
 
