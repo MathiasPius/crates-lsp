@@ -65,6 +65,9 @@ impl Backend {
         };
 
         // Produce diagnostic hints for each crate where we might be helpful.
+        let nu_sev = self.settings.needs_update_severity().await;
+        let utd_sev = self.settings.up_to_date_severity().await;
+        let ud_sev = self.settings.unknown_dep_severity().await;
         let diagnostics: Vec<_> = dependency_with_versions
             .into_iter()
             .map(|dependency| {
@@ -74,7 +77,7 @@ impl Backend {
                             if !version.matches(newest_version) {
                                 Diagnostic {
                                     range: *range,
-                                    severity: None,
+                                    severity: Some(nu_sev),
                                     code: Some(NumberOrString::Number(
                                         diagnostic_codes::NEEDS_UPDATE,
                                     )),
@@ -94,7 +97,7 @@ impl Backend {
                                 };
                                 Diagnostic::new(
                                     range,
-                                    None,
+                                    Some(utd_sev),
                                     Some(NumberOrString::Number(diagnostic_codes::UP_TO_DATE)),
                                     None,
                                     "✓".to_string(),
@@ -105,7 +108,7 @@ impl Backend {
                         }
                         DependencyVersion::Partial { range, .. } => Diagnostic {
                             range: *range,
-                            severity: None,
+                            severity: Some(nu_sev),
                             code: Some(NumberOrString::Number(diagnostic_codes::NEEDS_UPDATE)),
                             code_description: None,
                             source: None,
@@ -120,7 +123,7 @@ impl Backend {
                 } else {
                     Diagnostic {
                         range: dependency.version.range(),
-                        severity: None,
+                        severity: Some(ud_sev),
                         code: Some(NumberOrString::Number(diagnostic_codes::UNKNOWN_DEP)),
                         code_description: None,
                         source: None,
