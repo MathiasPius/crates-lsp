@@ -166,7 +166,7 @@ impl<'a> Line<'a> {
                     },
                     '"' => VersionSelector {
                         name,
-                        start: i,
+                        start: i + 1,
                         first: true,
                     },
                     _ => Name { name },
@@ -176,7 +176,7 @@ impl<'a> Line<'a> {
                         if c == '"' {
                             VersionSelector {
                                 name,
-                                start: i,
+                                start: i + 1,
                                 first: true,
                             }
                         } else {
@@ -239,7 +239,7 @@ impl<'a> Line<'a> {
                 start,
                 end,
             } => {
-                let version = version[1..].trim();
+                let version = version.trim();
                 let version = if let Ok(version) = VersionReq::parse(version) {
                     DependencyVersion::Complete {
                         version,
