@@ -275,7 +275,6 @@ impl LanguageServer for Backend {
 
                 if let Some(Some(newest_version)) = packages.get(&dependency.name) {
                     let specified_version = dependency.version.to_string();
-                    let specified_version = &specified_version[0..specified_version.len() - 1];
 
                     let newest_version = newest_version.to_string();
 
