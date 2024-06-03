@@ -213,7 +213,7 @@ impl<'a> Line<'a> {
                             }
                         }
                     }
-                    '0'..='9' | '.' | '_' | '<' | '>' | '=' | ',' => VersionSelector {
+                    '0'..='9' | '.' | '_' | '-' | '<' | '>' | '=' | ',' => VersionSelector {
                         name,
                         start,
                         first: false,
