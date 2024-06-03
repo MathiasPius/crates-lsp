@@ -130,9 +130,7 @@ impl Backend {
                         message: format!("{}: Unknown crate", &dependency.name),
                         related_information: None,
                         tags: None,
-                        data: Some(serde_json::json!({
-                            "dependency_name": dependency.name
-                        })),
+                        data: None,
                     }
                 }
             })
