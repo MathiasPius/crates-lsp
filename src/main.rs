@@ -13,6 +13,12 @@ mod crates;
 mod parse;
 mod settings;
 
+mod diagnostic_codes {
+    pub const UP_TO_DATE: i32 = 0;
+    pub const NEEDS_UPDATE: i32 = 1;
+    pub const UNKNOWN_DEP: i32 = 2;
+}
+
 #[derive(Debug, Clone)]
 struct Backend {
     client: Client,
@@ -66,28 +72,65 @@ impl Backend {
                     match &dependency.version {
                         DependencyVersion::Complete { range, version } => {
                             if !version.matches(newest_version) {
-                                Diagnostic::new_simple(
-                                    *range,
-                                    format!("{}: {newest_version}", &dependency.name),
-                                )
+                                Diagnostic {
+                                    range: *range,
+                                    severity: None,
+                                    code: Some(NumberOrString::Number(
+                                        diagnostic_codes::NEEDS_UPDATE,
+                                    )),
+                                    code_description: None,
+                                    source: None,
+                                    message: format!("{}: {newest_version}", &dependency.name),
+                                    related_information: None,
+                                    tags: None,
+                                    data: Some(serde_json::json!({
+                                        "newest_version": newest_version,
+                                    })),
+                                }
                             } else {
                                 let range = Range {
                                     start: Position::new(range.start.line, 0),
                                     end: Position::new(range.start.line, 0),
                                 };
-                                Diagnostic::new_simple(range, "✓".to_string())
+                                Diagnostic::new(
+                                    range,
+                                    None,
+                                    Some(NumberOrString::Number(diagnostic_codes::UP_TO_DATE)),
+                                    None,
+                                    "✓".to_string(),
+                                    None,
+                                    None,
+                                )
                             }
                         }
-                        DependencyVersion::Partial { range, .. } => Diagnostic::new_simple(
-                            *range,
-                            format!("{}: {newest_version}", &dependency.name),
-                        ),
+                        DependencyVersion::Partial { range, .. } => Diagnostic {
+                            range: *range,
+                            severity: None,
+                            code: Some(NumberOrString::Number(diagnostic_codes::NEEDS_UPDATE)),
+                            code_description: None,
+                            source: None,
+                            message: format!("{}: {newest_version}", &dependency.name),
+                            related_information: None,
+                            tags: None,
+                            data: Some(serde_json::json!({
+                                "newest_version": newest_version,
+                            })),
+                        },
                     }
                 } else {
-                    Diagnostic::new_simple(
-                        dependency.version.range(),
-                        format!("{}: Unknown crate", &dependency.name),
-                    )
+                    Diagnostic {
+                        range: dependency.version.range(),
+                        severity: None,
+                        code: Some(NumberOrString::Number(diagnostic_codes::UNKNOWN_DEP)),
+                        code_description: None,
+                        source: None,
+                        message: format!("{}: Unknown crate", &dependency.name),
+                        related_information: None,
+                        tags: None,
+                        data: Some(serde_json::json!({
+                            "dependency_name": dependency.name
+                        })),
+                    }
                 }
             })
             .collect();
@@ -120,6 +163,7 @@ impl LanguageServer for Backend {
                     all_commit_characters: None,
                     ..Default::default()
                 }),
+                code_action_provider: Some(CodeActionProviderCapability::Simple(true)),
                 execute_command_provider: Some(ExecuteCommandOptions {
                     commands: vec!["dummy.do_something".to_string()],
                     work_done_progress_options: Default::default(),
@@ -258,6 +302,56 @@ impl LanguageServer for Backend {
                 return Ok(None);
             }
         }
+    }
+
+    async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
+        let mut response = CodeActionResponse::new();
+        for d in params
+            .context
+            .diagnostics
+            .into_iter()
+            .filter(|d| d.range.start <= params.range.start && d.range.end >= params.range.end)
+        {
+            let Some(NumberOrString::Number(diagnostic_codes::NEEDS_UPDATE)) = d.code else {
+                continue;
+            };
+
+            let Some(serde_json::Value::Object(ref data)) = d.data else {
+                continue;
+            };
+
+            let Some(serde_json::Value::String(newest_version)) = data.get("newest_version") else {
+                continue;
+            };
+
+            let range = d.range;
+            let newest_version = newest_version.clone();
+
+            response.push(CodeActionOrCommand::CodeAction(CodeAction {
+                title: format!("Update Version to: {newest_version}"),
+                kind: Some(CodeActionKind::QUICKFIX),
+                diagnostics: Some(vec![d]),
+                edit: Some(WorkspaceEdit {
+                    changes: Some(
+                        [(
+                            params.text_document.uri.clone(),
+                            vec![TextEdit {
+                                range,
+                                new_text: newest_version,
+                            }],
+                        )]
+                        .into(),
+                    ),
+                    document_changes: None,
+                    change_annotations: None,
+                }),
+                command: None,
+                is_preferred: None,
+                disabled: None,
+                data: None,
+            }))
+        }
+        Ok(Some(response))
     }
 }
 
