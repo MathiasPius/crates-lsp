@@ -393,7 +393,7 @@ impl ManifestTracker {
                             // named "version" because of the Line::parse logic assuming this is
                             // a regular dependencies section.
                             if let Some(x) = dependency.name_mut() {
-                                *x = name.clone()
+                                x.clone_from(name)
                             }
                         }
                         // Line::parse assumes line 0, modify so we have to fix this manually.
