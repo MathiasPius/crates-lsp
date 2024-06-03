@@ -166,7 +166,7 @@ impl<'a> Line<'a> {
                     },
                     '"' => VersionSelector {
                         name,
-                        start: i,
+                        start: i + 1,
                         first: true,
                     },
                     _ => Name { name },
@@ -176,7 +176,7 @@ impl<'a> Line<'a> {
                         if c == '"' {
                             VersionSelector {
                                 name,
-                                start: i,
+                                start: i + 1,
                                 first: true,
                             }
                         } else {
@@ -239,7 +239,7 @@ impl<'a> Line<'a> {
                 start,
                 end,
             } => {
-                let version = version[1..].trim();
+                let version = version.trim();
                 let version = if let Ok(version) = VersionReq::parse(version) {
                     DependencyVersion::Complete {
                         version,
@@ -268,7 +268,7 @@ impl<'a> Line<'a> {
                 start,
             } => {
                 let version = DependencyVersion::Partial {
-                    version: version[1..].trim().trim_matches(',').to_string(),
+                    version: version.trim().trim_matches(',').to_string(),
                     range: Range::new(
                         Position::new(0, start as u32),
                         Position::new(0, line.len() as u32),
@@ -286,7 +286,7 @@ impl<'a> Line<'a> {
                 Some(Dependency::WithVersion(DependencyWithVersion {
                     name: name.to_string(),
                     version: DependencyVersion::Partial {
-                        version: line[start + 1..].trim().to_string(),
+                        version: line[start..].trim().to_string(),
                         range: Range::new(
                             Position::new(0, start as u32),
                             Position::new(0, line.len() as u32),
@@ -300,20 +300,6 @@ impl<'a> Line<'a> {
             }),
             Start => None,
         }
-        // very hacky should probably fix parsing
-        .map(|mut d| match d {
-            Dependency::WithVersion(ref mut v) => {
-                let range = v.version.range_mut();
-                if let Some('"') = line.chars().nth(range.start.character as usize) {
-                    range.start.character += 1;
-                }
-                if let Some('"') = line.chars().nth(range.end.character as usize + 1) {
-                    range.end.character -= 1;
-                }
-                d
-            }
-            _ => d,
-        })
     }
 }
 
