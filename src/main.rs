@@ -295,6 +295,13 @@ impl LanguageServer for Backend {
             return Ok(None);
         }
 
+        let utd_hint = self.settings.up_to_date_hint().await;
+        let nu_hint = self.settings.needs_update_hint().await;
+
+        if utd_hint.is_empty() && nu_hint.is_empty() {
+            return Ok(None);
+        }
+
         let Some(dependencies) = self.manifests.get(&params.text_document.uri).await else {
             return Ok(None);
         };
@@ -327,7 +334,12 @@ impl LanguageServer for Backend {
                 .await
         };
 
-        let mut v = Vec::with_capacity(dependencies_with_versions.len());
+        let mut v = if utd_hint.is_empty() || nu_hint.is_empty() {
+            Vec::new() // if either is empty we dont know how many elements there are
+        } else {
+            Vec::with_capacity(dependencies_with_versions.len())
+        };
+
         for dep in dependencies_with_versions {
             let Some(Some(newest_version)) = newest_packages.get(&dep.name) else {
                 continue;
@@ -335,10 +347,19 @@ impl LanguageServer for Backend {
             let (hint, tip, pos) = match dep.version {
                 DependencyVersion::Complete { range, version } => {
                     let (hint, tip) = if version.matches(newest_version) {
-                        ("✓".to_string(), "up to date".to_string())
-                    } else {
+                        if utd_hint.is_empty() {
+                            continue;
+                        }
                         (
-                            newest_version.to_string(),
+                            utd_hint.replace("{}", &version.to_string()),
+                            "up to date".to_string(),
+                        )
+                    } else {
+                        if nu_hint.is_empty() {
+                            continue;
+                        }
+                        (
+                            nu_hint.replace("{}", &newest_version.to_string()),
                             "latest stable version".to_string(),
                         )
                     };
@@ -348,11 +369,16 @@ impl LanguageServer for Backend {
                         Position::new(range.end.line, range.end.character + 1),
                     )
                 }
-                DependencyVersion::Partial { range, .. } => (
-                    newest_version.to_string(),
-                    "latest stable version".to_string(),
-                    Position::new(range.end.line, range.end.character + 1),
-                ),
+                DependencyVersion::Partial { range, .. } => {
+                    if nu_hint.is_empty() {
+                        continue;
+                    }
+                    (
+                        nu_hint.replace("{}", &newest_version.to_string()),
+                        "latest stable version".to_string(),
+                        Position::new(range.end.line, range.end.character + 1),
+                    )
+                }
             };
             v.push(InlayHint {
                 position: pos,

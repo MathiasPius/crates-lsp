@@ -58,6 +58,26 @@ impl Settings {
             .filter(verify_severity)
             .unwrap_or(DiagnosticSeverity::WARNING)
     }
+
+    pub async fn up_to_date_hint(&self) -> String {
+        self.inner
+            .read()
+            .await
+            .lsp
+            .up_to_date_hint
+            .clone()
+            .unwrap_or_else(|| "✓".to_string())
+    }
+
+    pub async fn needs_update_hint(&self) -> String {
+        self.inner
+            .read()
+            .await
+            .lsp
+            .needs_update_hint
+            .clone()
+            .unwrap_or_else(|| " {}".to_string())
+    }
 }
 
 // verify the config is a valid severity level
@@ -80,6 +100,10 @@ pub struct LspSettings {
     pub up_to_date_severity: Option<DiagnosticSeverity>,
     #[serde(default)]
     pub unknown_dep_severity: Option<DiagnosticSeverity>,
+    #[serde(default)]
+    pub up_to_date_hint: Option<String>,
+    #[serde(default)]
+    pub needs_update_hint: Option<String>,
 }
 
 #[derive(Default, Debug, Clone, Deserialize)]
