@@ -25,6 +25,10 @@ struct Backend {
 
 impl Backend {
     async fn calculate_diagnostics(&self, url: Url, content: &str) -> Vec<Diagnostic> {
+        if !self.settings.diagnostics().await {
+            return Vec::new();
+        }
+
         let packages = self.manifests.update_from_source(url, content).await;
 
         // Retrieve just the package names, so we can fetch the latest
@@ -287,6 +291,10 @@ impl LanguageServer for Backend {
     }
 
     async fn inlay_hint(&self, params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
+        if !self.settings.inlay_hints().await {
+            return Ok(None);
+        }
+
         let Some(dependencies) = self.manifests.get(&params.text_document.uri).await else {
             return Ok(None);
         };

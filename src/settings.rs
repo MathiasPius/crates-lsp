@@ -21,6 +21,14 @@ impl Settings {
         self.inner.read().await.lsp.use_api.unwrap_or_default()
     }
 
+    pub async fn inlay_hints(&self) -> bool {
+        self.inner.read().await.lsp.inlay_hints.unwrap_or(true)
+    }
+
+    pub async fn diagnostics(&self) -> bool {
+        self.inner.read().await.lsp.diagnostics.unwrap_or(true)
+    }
+
     pub async fn needs_update_severity(&self) -> DiagnosticSeverity {
         self.inner
             .read()
@@ -62,6 +70,10 @@ fn verify_severity(d: &DiagnosticSeverity) -> bool {
 pub struct LspSettings {
     #[serde(default)]
     pub use_api: Option<bool>,
+    #[serde(default)]
+    pub inlay_hints: Option<bool>,
+    #[serde(default)]
+    pub diagnostics: Option<bool>,
     #[serde(default)]
     pub needs_update_severity: Option<DiagnosticSeverity>,
     #[serde(default)]
