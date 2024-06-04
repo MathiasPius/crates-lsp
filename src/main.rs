@@ -146,6 +146,7 @@ impl LanguageServer for Backend {
                     all_commit_characters: None,
                     ..Default::default()
                 }),
+                inlay_hint_provider: Some(OneOf::Left(true)),
                 execute_command_provider: Some(ExecuteCommandOptions {
                     commands: vec!["dummy.do_something".to_string()],
                     work_done_progress_options: Default::default(),
@@ -284,6 +285,80 @@ impl LanguageServer for Backend {
                 return Ok(None);
             }
         }
+    }
+
+    async fn inlay_hint(&self, params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
+        let Some(dependencies) = self.manifests.get(&params.text_document.uri).await else {
+            return Ok(None);
+        };
+        let dependencies_with_versions: Vec<DependencyWithVersion> = dependencies
+            .into_iter()
+            .filter_map(|d| match d {
+                Dependency::WithVersion(v) => (v.version.range().start >= params.range.start
+                    && v.version.range().end <= params.range.end)
+                    .then_some(v),
+                Dependency::Other { .. } | Dependency::Partial { .. } => None,
+            })
+            .collect();
+
+        if dependencies_with_versions.is_empty() {
+            return Ok(None);
+        }
+
+        let crate_names: Vec<&str> = dependencies_with_versions
+            .iter()
+            .map(|x| x.name.as_str())
+            .collect();
+
+        let newest_packages = if self.settings.use_api().await {
+            self.api
+                .fetch_versions(self.cache.clone(), &crate_names)
+                .await
+        } else {
+            self.sparse
+                .fetch_versions(self.cache.clone(), &crate_names)
+                .await
+        };
+
+        let mut v = Vec::with_capacity(dependencies_with_versions.len());
+        for dep in dependencies_with_versions {
+            let Some(Some(newest_version)) = newest_packages.get(&dep.name) else {
+                continue;
+            };
+            let (hint, tip, pos) = match dep.version {
+                DependencyVersion::Complete { range, version } => {
+                    let (hint, tip) = if version.matches(newest_version) {
+                        ("✓".to_string(), "up to date".to_string())
+                    } else {
+                        (
+                            newest_version.to_string(),
+                            "latest stable version".to_string(),
+                        )
+                    };
+                    (
+                        hint,
+                        tip,
+                        Position::new(range.end.line, range.end.character + 1),
+                    )
+                }
+                DependencyVersion::Partial { range, .. } => (
+                    newest_version.to_string(),
+                    "latest stable version".to_string(),
+                    Position::new(range.end.line, range.end.character + 1),
+                ),
+            };
+            v.push(InlayHint {
+                position: pos,
+                label: InlayHintLabel::String(hint),
+                kind: None,
+                text_edits: None,
+                tooltip: Some(InlayHintTooltip::String(tip)),
+                padding_left: Some(true),
+                padding_right: None,
+                data: None,
+            });
+        }
+        Ok(Some(v))
     }
 }
 
