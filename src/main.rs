@@ -43,8 +43,7 @@ impl Backend {
         }
 
         let crate_names: Vec<&str> = dependency_with_versions
-            .clone()
-            .into_iter()
+            .iter()
             .map(|x| x.name.as_str())
             .collect();
         // Get the newest version of each crate that appears in the manifest.
