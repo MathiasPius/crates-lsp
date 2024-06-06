@@ -31,6 +31,10 @@ struct Backend {
 
 impl Backend {
     async fn calculate_diagnostics(&self, url: Url, content: &str) -> Vec<Diagnostic> {
+        if !self.settings.diagnostics().await {
+            return Vec::new();
+        }
+
         let packages = self.manifests.update_from_source(url, content).await;
 
         // Retrieve just the package names, so we can fetch the latest
@@ -49,8 +53,7 @@ impl Backend {
         }
 
         let crate_names: Vec<&str> = dependency_with_versions
-            .clone()
-            .into_iter()
+            .iter()
             .map(|x| x.name.as_str())
             .collect();
         // Get the newest version of each crate that appears in the manifest.
@@ -164,6 +167,7 @@ impl LanguageServer for Backend {
                     all_commit_characters: None,
                     ..Default::default()
                 }),
+                inlay_hint_provider: Some(OneOf::Left(true)),
                 code_action_provider: Some(CodeActionProviderCapability::Simple(true)),
                 execute_command_provider: Some(ExecuteCommandOptions {
                     commands: vec!["dummy.do_something".to_string()],
@@ -303,6 +307,109 @@ impl LanguageServer for Backend {
             }
         }
     }
+
+    async fn inlay_hint(&self, params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
+        if !self.settings.inlay_hints().await {
+            return Ok(None);
+        }
+
+        let utd_hint = self.settings.up_to_date_hint().await;
+        let nu_hint = self.settings.needs_update_hint().await;
+
+        if utd_hint.is_empty() && nu_hint.is_empty() {
+            return Ok(None);
+        }
+
+        let Some(dependencies) = self.manifests.get(&params.text_document.uri).await else {
+            return Ok(None);
+        };
+        let dependencies_with_versions: Vec<DependencyWithVersion> = dependencies
+            .into_iter()
+            .filter_map(|d| match d {
+                Dependency::WithVersion(v) => (v.version.range().start >= params.range.start
+                    && v.version.range().end <= params.range.end)
+                    .then_some(v),
+                Dependency::Other { .. } | Dependency::Partial { .. } => None,
+            })
+            .collect();
+
+        if dependencies_with_versions.is_empty() {
+            return Ok(None);
+        }
+
+        let crate_names: Vec<&str> = dependencies_with_versions
+            .iter()
+            .map(|x| x.name.as_str())
+            .collect();
+
+        let newest_packages = if self.settings.use_api().await {
+            self.api
+                .fetch_versions(self.cache.clone(), &crate_names)
+                .await
+        } else {
+            self.sparse
+                .fetch_versions(self.cache.clone(), &crate_names)
+                .await
+        };
+
+        let mut v = if utd_hint.is_empty() || nu_hint.is_empty() {
+            Vec::new() // if either is empty we dont know how many elements there are
+        } else {
+            Vec::with_capacity(dependencies_with_versions.len())
+        };
+
+        for dep in dependencies_with_versions {
+            let Some(Some(newest_version)) = newest_packages.get(&dep.name) else {
+                continue;
+            };
+            let (hint, tip, pos) = match dep.version {
+                DependencyVersion::Complete { range, version } => {
+                    let (hint, tip) = if version.matches(newest_version) {
+                        if utd_hint.is_empty() {
+                            continue;
+                        }
+                        (
+                            utd_hint.replace("{}", &version.to_string()),
+                            "up to date".to_string(),
+                        )
+                    } else {
+                        if nu_hint.is_empty() {
+                            continue;
+                        }
+                        (
+                            nu_hint.replace("{}", &newest_version.to_string()),
+                            "latest stable version".to_string(),
+                        )
+                    };
+                    (
+                        hint,
+                        tip,
+                        Position::new(range.end.line, range.end.character + 1),
+                    )
+                }
+                DependencyVersion::Partial { range, .. } => {
+                    if nu_hint.is_empty() {
+                        continue;
+                    }
+                    (
+                        nu_hint.replace("{}", &newest_version.to_string()),
+                        "latest stable version".to_string(),
+                        Position::new(range.end.line, range.end.character + 1),
+                    )
+                }
+            };
+            v.push(InlayHint {
+                position: pos,
+                label: InlayHintLabel::String(hint),
+                kind: None,
+                text_edits: None,
+                tooltip: Some(InlayHintTooltip::String(tip)),
+                padding_left: Some(true),
+                padding_right: None,
+                data: None,
+            });
+        }
+        Ok(Some(v))
 
     async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
         let mut response = CodeActionResponse::new();
