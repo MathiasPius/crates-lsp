@@ -84,7 +84,7 @@ jobs:
           tag: v${{ steps.crate-version.outputs.version }}
 
       - name: Fail if tag already exists
-        if: ${{ steps.check-tag.output.exists == 'true' }}
+        if: ${{ steps.check-tag.outputs.exists == 'true' }}
         uses: actions/github-script@v3
         with:
           script: |
