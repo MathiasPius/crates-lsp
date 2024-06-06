@@ -410,6 +410,7 @@ impl LanguageServer for Backend {
             });
         }
         Ok(Some(v))
+    }
 
     async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
         let mut response = CodeActionResponse::new();
