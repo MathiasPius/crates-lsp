@@ -166,7 +166,7 @@ impl<'a> Line<'a> {
                     },
                     '"' => VersionSelector {
                         name,
-                        start: i,
+                        start: i + 1,
                         first: true,
                     },
                     _ => Name { name },
@@ -176,7 +176,7 @@ impl<'a> Line<'a> {
                         if c == '"' {
                             VersionSelector {
                                 name,
-                                start: i,
+                                start: i + 1,
                                 first: true,
                             }
                         } else {
@@ -213,7 +213,7 @@ impl<'a> Line<'a> {
                             }
                         }
                     }
-                    '0'..='9' | '.' | '_' | '<' | '>' | '=' | ',' => VersionSelector {
+                    '0'..='9' | '.' | '*' | '_' | '-' | '<' | '>' | '=' | ',' => VersionSelector {
                         name,
                         start,
                         first: false,
@@ -239,7 +239,7 @@ impl<'a> Line<'a> {
                 start,
                 end,
             } => {
-                let version = version[1..].trim();
+                let version = version.trim();
                 let version = if let Ok(version) = VersionReq::parse(version) {
                     DependencyVersion::Complete {
                         version,
@@ -268,7 +268,7 @@ impl<'a> Line<'a> {
                 start,
             } => {
                 let version = DependencyVersion::Partial {
-                    version: version[1..].trim().trim_matches(',').to_string(),
+                    version: version.trim().trim_matches(',').to_string(),
                     range: Range::new(
                         Position::new(0, start as u32),
                         Position::new(0, line.len() as u32),
@@ -286,7 +286,7 @@ impl<'a> Line<'a> {
                 Some(Dependency::WithVersion(DependencyWithVersion {
                     name: name.to_string(),
                     version: DependencyVersion::Partial {
-                        version: line[start + 1..].trim().to_string(),
+                        version: line[start..].trim().to_string(),
                         range: Range::new(
                             Position::new(0, start as u32),
                             Position::new(0, line.len() as u32),
@@ -393,7 +393,7 @@ impl ManifestTracker {
                             // named "version" because of the Line::parse logic assuming this is
                             // a regular dependencies section.
                             if let Some(x) = dependency.name_mut() {
-                                *x = name.clone()
+                                x.clone_from(name)
                             }
                         }
                         // Line::parse assumes line 0, modify so we have to fix this manually.
@@ -559,7 +559,7 @@ mod tests {
                     name: "log".to_string(),
                     version: DependencyVersion::Complete {
                         range: Range {
-                            start: Position::new(1, 6),
+                            start: Position::new(1, 7),
                             end: Position::new(1, 8)
                         },
                         version: VersionReq::parse("1").unwrap()
@@ -569,7 +569,7 @@ mod tests {
                     name: "serde".to_string(),
                     version: DependencyVersion::Complete {
                         range: Range {
-                            start: Position::new(4, 10),
+                            start: Position::new(4, 11),
                             end: Position::new(4, 12)
                         },
                         version: VersionReq::parse("1").unwrap()
@@ -579,7 +579,7 @@ mod tests {
                     name: "tokio".to_string(),
                     version: DependencyVersion::Complete {
                         range: Range {
-                            start: Position::new(7, 10),
+                            start: Position::new(7, 11),
                             end: Position::new(7, 12)
                         },
                         version: VersionReq::parse("1").unwrap()
