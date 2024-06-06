@@ -81,9 +81,9 @@ jobs:
       - uses: mukunku/tag-exists-action@v1.6.0
         id: check-tag
         with:
-          tag: ${{ steps.crate-version.outputs.version }}
+          tag: v${{ steps.crate-version.outputs.version }}
 
-      - name: Check coverage tolerance
+      - name: Fail if tag already exists
         if: ${{ steps.check-tag.output.exists == 'true' }}
         uses: actions/github-script@v3
         with:
