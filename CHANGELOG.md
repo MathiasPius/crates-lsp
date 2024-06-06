@@ -1,5 +1,24 @@
 # Change Log
 
+## 0.1.3
+
+### Added
+
+* Add *Code Action* for updating version by [@Vulpesx](https://github.com/MathiasPius/crates-lsp/pull/9)
+* Add *Inlay Hints* by [@Vulpesx](https://github.com/MathiasPius/crates-lsp/pull/10)
+
+## 0.1.2
+
+### Added
+
+* Implement diagnostic levels by [@Vulpesx](https://github.com/MathiasPius/crates-lsp/pull/8)
+
+## 0.1.1
+
+### Fixed
+
+* Updated hyper-rustls from 0.26.0 to 0.27.0
+
 ## 0.1.0
 
 ### Fixed
