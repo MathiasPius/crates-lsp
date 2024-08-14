@@ -1,52 +1,28 @@
 use async_trait::async_trait;
-use http_body_util::{BodyExt, Empty};
-use hyper::{body::Bytes, Request};
-use hyper_rustls::HttpsConnector;
-use hyper_util::{
-    client::legacy::{connect::HttpConnector, Client},
-    rt::TokioExecutor,
-};
+use reqwest::Client;
 use semver::Version;
 use serde::Deserialize;
 
-use super::{CrateError, CrateLookup};
+use super::{default_client, CrateError, CrateLookup};
 
 #[derive(Debug, Clone)]
 pub struct CrateApi {
-    client: Client<HttpsConnector<HttpConnector>, Empty<Bytes>>,
+    client: Client,
 }
 
 #[async_trait]
 impl CrateLookup for CrateApi {
-    fn client(&self) -> &crate::crates::HyperClient {
+    fn client(&self) -> &Client {
         &self.client
     }
 
     async fn get_latest_version(self, crate_name: String) -> Result<Version, CrateError> {
         let response = self
             .client
-            .request(
-                Request::builder()
-                    .uri(&format!("https://crates.io/api/v1/crates/{crate_name}"))
-                    .header(
-                        "User-Agent",
-                        "crates-lsp (github.com/MathiasPius/crates-lsp)",
-                    )
-                    .header("Accept", "application/json")
-                    .body(Empty::new())
-                    .map_err(CrateError::transport)?,
-            )
+            .get(&format!("https://crates.io/api/v1/crates/{crate_name}"))
+            .send()
             .await
             .map_err(CrateError::transport)?;
-
-        let body = response
-            .into_body()
-            .collect()
-            .await
-            .map_err(CrateError::transport)?
-            .to_bytes();
-
-        let stringified = String::from_utf8_lossy(&body);
 
         #[derive(Deserialize)]
         struct CrateInner {
@@ -58,9 +34,7 @@ impl CrateLookup for CrateApi {
             #[serde(rename = "crate")]
             pub inner: CrateInner,
         }
-
-        let details: Crate =
-            serde_json::from_str(&stringified).map_err(CrateError::Deserialization)?;
+        let details: Crate = response.json().await?;
 
         Ok(details.inner.max_stable_version)
     }
@@ -68,14 +42,9 @@ impl CrateLookup for CrateApi {
 
 impl Default for CrateApi {
     fn default() -> Self {
-        let https = hyper_rustls::HttpsConnectorBuilder::new()
-            .with_webpki_roots()
-            .https_only()
-            .enable_http1()
-            .build();
-        let client = Client::builder(TokioExecutor::new()).build(https);
-
-        CrateApi { client }
+        CrateApi {
+            client: default_client(),
+        }
     }
 }
 

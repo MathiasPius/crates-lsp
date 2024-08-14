@@ -1,20 +1,18 @@
 use async_trait::async_trait;
-use http_body_util::{BodyExt, Empty};
-use hyper::Request;
-use hyper_util::{client::legacy::Client, rt::TokioExecutor};
+use reqwest::Client;
 use semver::Version;
 use serde::Deserialize;
 
-use super::{CrateError, CrateLookup, HyperClient};
+use super::{default_client, CrateError, CrateLookup};
 
 #[derive(Debug, Clone)]
 pub struct CrateIndex {
-    client: HyperClient,
+    client: Client,
 }
 
 #[async_trait]
 impl CrateLookup for CrateIndex {
-    fn client(&self) -> &crate::crates::HyperClient {
+    fn client(&self) -> &Client {
         &self.client
     }
 
@@ -29,28 +27,12 @@ impl CrateLookup for CrateIndex {
 
         let response = self
             .client
-            .request(
-                Request::builder()
-                    .uri(&format!("https://index.crates.io/{crate_index_path}"))
-                    .header(
-                        "User-Agent",
-                        "crates-lsp (github.com/MathiasPius/crates-lsp)",
-                    )
-                    .header("Accept", "application/json")
-                    .body(Empty::new())
-                    .map_err(CrateError::transport)?,
-            )
+            .get(&format!("https://index.crates.io/{crate_index_path}"))
+            .send()
             .await
             .map_err(CrateError::transport)?;
 
-        let body = response
-            .into_body()
-            .collect()
-            .await
-            .map_err(CrateError::transport)?
-            .to_bytes();
-
-        let stringified = String::from_utf8_lossy(&body);
+        let stringified = response.text().await?;
 
         let mut all_releases = Vec::new();
         for line in stringified.lines() {
@@ -86,14 +68,9 @@ impl CrateLookup for CrateIndex {
 
 impl Default for CrateIndex {
     fn default() -> Self {
-        let https = hyper_rustls::HttpsConnectorBuilder::new()
-            .with_webpki_roots()
-            .https_only()
-            .enable_http1()
-            .build();
-        let client = Client::builder(TokioExecutor::new()).build(https);
-
-        CrateIndex { client }
+        CrateIndex {
+            client: default_client(),
+        }
     }
 }
 
