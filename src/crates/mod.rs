@@ -5,11 +5,7 @@ pub mod sparse;
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use http_body_util::{BodyExt, Empty};
-use hyper::body::Bytes;
-use hyper::Request;
-use hyper_rustls::HttpsConnector;
-use hyper_util::client::legacy::{connect::HttpConnector, Client};
+use reqwest::{Client, Error};
 use semver::Version;
 use serde::Deserialize;
 use time::OffsetDateTime;
@@ -17,19 +13,25 @@ use tokio::sync::mpsc;
 
 use self::cache::{CachedVersion, CrateCache};
 
-type HyperClient = Client<HttpsConnector<HttpConnector>, Empty<Bytes>>;
-
+#[allow(dead_code)]
 #[derive(Debug)]
 pub enum CrateError {
     NoVersionsFound,
     InvalidCrateName(String),
     Transport(Box<dyn std::error::Error + Send>),
     Deserialization(serde_json::Error),
+    Reqwest(Error),
 }
 
 impl CrateError {
     pub fn transport(error: impl std::error::Error + Send + 'static) -> Self {
         CrateError::Transport(Box::new(error))
+    }
+}
+
+impl From<Error> for CrateError {
+    fn from(value: Error) -> Self {
+        Self::Reqwest(value)
     }
 }
 
@@ -45,38 +47,19 @@ struct Crates {
 
 #[async_trait]
 pub trait CrateLookup: Clone + Send + 'static {
-    fn client(&self) -> &HyperClient;
+    fn client(&self) -> &Client;
     async fn search_crates(&self, crate_name: &String) -> Result<Vec<Crate>, CrateError> {
         let response = self
             .client()
-            .request(
-                Request::builder()
-                    .uri(&format!(
-                        "https://crates.io/api/v1/crates?q={}&per_page=5",
-                        crate_name
-                    ))
-                    .header(
-                        "User-Agent",
-                        "crates-lsp (github.com/MathiasPius/crates-lsp)",
-                    )
-                    .header("Accept", "application/json")
-                    .body(Empty::default())
-                    .map_err(CrateError::transport)?,
-            )
+            .get(&format!(
+                "https://crates.io/api/v1/crates?q={}&per_page=5",
+                crate_name
+            ))
+            .send()
             .await
             .map_err(CrateError::transport)?;
 
-        let body = response
-            .into_body()
-            .collect()
-            .await
-            .map_err(CrateError::transport)?
-            .to_bytes();
-
-        let stringified = String::from_utf8_lossy(&body);
-        let details: Crates =
-            serde_json::from_str(&stringified).map_err(CrateError::Deserialization)?;
-
+        let details: Crates = response.json().await?;
         Ok(details.crates)
     }
 
@@ -115,7 +98,10 @@ pub trait CrateLookup: Clone + Send + 'static {
                     tokio::spawn(async move {
                         match cloned_self.get_latest_version(crate_name.clone()).await {
                             Ok(version) => tx.send((crate_name, Some(version))).await,
-                            Err(_) => tx.send((crate_name, None)).await,
+                            Err(err) => {
+                                println!("{:?}", err);
+                                tx.send((crate_name, None)).await
+                            }
                         }
                     });
                 }
@@ -140,4 +126,20 @@ pub trait CrateLookup: Clone + Send + 'static {
 
         versions
     }
+}
+
+pub fn default_client() -> Client {
+    _default_client().unwrap_or_default()
+}
+fn _default_client() -> reqwest::Result<Client> {
+    let builder = Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .user_agent("crates-lsp (github.com/MathiasPius/crates-lsp)");
+
+    if let Ok(proxy) = std::env::var("https_proxy") {
+        if let Ok(proxy) = reqwest::Proxy::all(proxy) {
+            return builder.proxy(proxy).build();
+        }
+    };
+    builder.build()
 }
