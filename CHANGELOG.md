@@ -1,5 +1,12 @@
 # Change Log
 
+## 0.1.4
+
+### Fixed
+
+* Replaced OpenSSL dependency with rustls/webpki
+* Updated dependencies
+
 ## 0.1.3
 
 ### Added
