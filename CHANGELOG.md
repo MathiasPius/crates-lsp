@@ -1,5 +1,11 @@
 # Change Log
 
+## 0.1.5
+
+### Added
+
+* Added crates.io build pipeline (#14)
+
 ## 0.1.4
 
 ### Fixed

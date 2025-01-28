@@ -1,7 +1,10 @@
 [package]
 name = "crates-lsp"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
+keywords = ["crates", "cargo", "lsp", "language server protocol"]
+description = "Language Server Protocol implementation for Cargo.toml manifests."
+license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
