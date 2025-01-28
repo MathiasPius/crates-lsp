@@ -2,7 +2,7 @@
 name = "crates-lsp"
 version = "0.1.5"
 edition = "2021"
-keywords = ["crates", "cargo", "lsp", "language server protocol"]
+keywords = ["crates", "cargo", "lsp", "Cargo.toml"]
 description = "Language Server Protocol implementation for Cargo.toml manifests."
 license = "MIT"
 
