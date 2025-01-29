@@ -1,3 +1,0 @@
-[dependencies]
-tracing-subscriber = { version = "0.3.17" }
-serde = "1.0"
