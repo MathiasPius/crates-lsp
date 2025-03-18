@@ -1,5 +1,12 @@
 # Change Log
 
+## 0.1.6
+
+### Fixed
+
+* Updated ring dependency in response to vulnerability.
+* Renamed crates cache directory from .lapce to .crates-lsp
+
 ## 0.1.5
 
 ### Added
