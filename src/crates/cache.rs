@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use tokio::sync::RwLock;
 
-const CRATE_CACHE_DIR: &str = "./.lapce/plugins/crates-lsp/crates.io";
+const CRATE_CACHE_DIR: &str = "./.crates-lsp/plugins/crates-lsp/crates.io";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Fetch {

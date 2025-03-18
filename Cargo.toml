@@ -1,6 +1,6 @@
 [package]
 name = "crates-lsp"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 keywords = ["crates", "cargo", "lsp"]
 description = "Language Server Protocol implementation for Cargo.toml manifests."
