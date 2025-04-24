@@ -1,5 +1,11 @@
 # Change Log
 
+## 0.1.7
+
+### Fixed
+
+* Updated tokio dependency. Resolves a vulnerability warning, which does not affect crates-lsp.
+
 ## 0.1.6
 
 ### Fixed
