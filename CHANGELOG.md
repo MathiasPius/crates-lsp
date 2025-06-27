@@ -15,7 +15,7 @@
     root_markers = { 'Crates.toml', '.git' },
     init_options = {
       lsp = {
-        inlay_hints: false
+        inlay_hints = false
       }
     }
   }
@@ -31,7 +31,7 @@
     filetypes = { 'toml' },
     root_markers = { 'Crates.toml', '.git' },
     init_options = {
-      inlay_hints: false
+      inlay_hints = false
     }
   }
   ```
@@ -51,7 +51,7 @@
     filetypes = { 'toml' },
     root_markers = { 'Crates.toml', '.git' },
     init_options = {
-      files: { 'Cargo.toml', 'AlternativeCargoFilename.toml']
+      files = { 'Cargo.toml', 'AlternativeCargoFilename.toml']
     }
   }
   ```
