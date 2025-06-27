@@ -51,7 +51,7 @@ pub trait CrateLookup: Clone + Send + 'static {
     async fn search_crates(&self, crate_name: &String) -> Result<Vec<Crate>, CrateError> {
         let response = self
             .client()
-            .get(&format!(
+            .get(format!(
                 "https://crates.io/api/v1/crates?q={}&per_page=5",
                 crate_name
             ))

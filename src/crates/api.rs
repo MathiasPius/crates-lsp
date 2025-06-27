@@ -19,7 +19,7 @@ impl CrateLookup for CrateApi {
     async fn get_latest_version(self, crate_name: String) -> Result<Version, CrateError> {
         let response = self
             .client
-            .get(&format!("https://crates.io/api/v1/crates/{crate_name}"))
+            .get(format!("https://crates.io/api/v1/crates/{crate_name}"))
             .send()
             .await
             .map_err(CrateError::transport)?;

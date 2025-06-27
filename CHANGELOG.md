@@ -1,5 +1,11 @@
 # Change Log
 
+## 0.1.8
+
+### Fixed
+
+* Dependency updates, linting, etc.
+
 ## 0.1.7
 
 ### Fixed

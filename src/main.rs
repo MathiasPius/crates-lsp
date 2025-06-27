@@ -286,8 +286,7 @@ impl LanguageServer for Backend {
                     let truncated_version = newest_version
                         .as_str()
                         .strip_prefix(
-                            specified_version
-                                .trim_start_matches(&['<', '>', '=', '^', '~'] as &[_]),
+                            specified_version.trim_start_matches(['<', '>', '=', '^', '~']),
                         )
                         .unwrap_or(&newest_version)
                         .to_string();

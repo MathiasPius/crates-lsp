@@ -27,7 +27,7 @@ impl CrateLookup for CrateIndex {
 
         let response = self
             .client
-            .get(&format!("https://index.crates.io/{crate_index_path}"))
+            .get(format!("https://index.crates.io/{crate_index_path}"))
             .send()
             .await
             .map_err(CrateError::transport)?;
