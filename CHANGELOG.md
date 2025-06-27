@@ -1,5 +1,62 @@
 # Change Log
 
+## 0.2.0
+
+### Breaking
+
+* Flattened settings structure.
+
+  Previously `crates-lsp` configuration settings all lived in a nested `lsp` object within the initialization parameters:
+
+  ```lua
+  vim.lsp.config['crates'] = {
+    cmd = { 'crates-lsp' },
+    filetypes = { 'toml' },
+    root_markers = { 'Crates.toml', '.git' },
+    init_options = {
+      lsp = {
+        inlay_hints: false
+      }
+    }
+  }
+  ```
+
+  Since all settings are necessarily LSP settings, this didn't really make sense.
+
+  All settings now live in the root initialization parameters object:
+
+  ```lua
+  vim.lsp.config['crates'] = {
+    cmd = { 'crates-lsp' },
+    filetypes = { 'toml' },
+    root_markers = { 'Crates.toml', '.git' },
+    init_options = {
+      inlay_hints: false
+    }
+  }
+  ```
+
+### Added
+
+* `files` configuration option, allowing you to limit the files `crates-lsp` should activate for, without relying on the lsp client which might not be able to filter. Solves #20.
+
+  Note:
+  * If not specified, this option defaults to `Cargo.toml`.
+  * Uses exact matching on the entire filename. Partial matches, patterns, globbing, regex is not supported.
+
+  Example (nvim):
+  ```lua
+  vim.lsp.config['crates'] = {
+    cmd = { 'crates-lsp' },
+    filetypes = { 'toml' },
+    root_markers = { 'Crates.toml', '.git' },
+    init_options = {
+      files: { 'Cargo.toml', 'AlternativeCargoFilename.toml']
+    }
+  }
+  ```
+
+
 ## 0.1.8
 
 ### Fixed

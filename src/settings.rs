@@ -1,39 +1,55 @@
 use std::sync::Arc;
 
+use reqwest::Url;
 use serde::Deserialize;
 use tokio::sync::RwLock;
 use tower_lsp::lsp_types::DiagnosticSeverity;
 
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct Settings {
-    inner: Arc<RwLock<InnerSettings>>,
+    inner: Arc<RwLock<LspSettings>>,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            inner: Arc::new(RwLock::new(LspSettings {
+                files: default_files(),
+                ..Default::default()
+            })),
+        }
+    }
 }
 
 impl Settings {
-    pub async fn populate_from(&self, value: serde_json::Value) {
-        if let Ok(new_settings) = serde_json::from_value(value) {
-            let mut internal_settings = self.inner.write().await;
-            *internal_settings = new_settings;
-        }
+    pub async fn populate_from(
+        &self,
+        value: serde_json::Value,
+    ) -> Result<LspSettings, serde_json::Error> {
+        let new_settings: LspSettings = serde_json::from_value(value)?;
+
+        let mut internal_settings = self.inner.write().await;
+        *internal_settings = new_settings.clone();
+
+        Ok(new_settings)
     }
 
     pub async fn use_api(&self) -> bool {
-        self.inner.read().await.lsp.use_api.unwrap_or_default()
+        self.inner.read().await.use_api.unwrap_or_default()
     }
 
     pub async fn inlay_hints(&self) -> bool {
-        self.inner.read().await.lsp.inlay_hints.unwrap_or(true)
+        self.inner.read().await.inlay_hints.unwrap_or(true)
     }
 
     pub async fn diagnostics(&self) -> bool {
-        self.inner.read().await.lsp.diagnostics.unwrap_or(true)
+        self.inner.read().await.diagnostics.unwrap_or(true)
     }
 
     pub async fn needs_update_severity(&self) -> DiagnosticSeverity {
         self.inner
             .read()
             .await
-            .lsp
             .needs_update_severity
             .filter(verify_severity)
             .unwrap_or(DiagnosticSeverity::INFORMATION)
@@ -43,7 +59,6 @@ impl Settings {
         self.inner
             .read()
             .await
-            .lsp
             .up_to_date_severity
             .filter(verify_severity)
             .unwrap_or(DiagnosticSeverity::HINT)
@@ -53,7 +68,6 @@ impl Settings {
         self.inner
             .read()
             .await
-            .lsp
             .unknown_dep_severity
             .filter(verify_severity)
             .unwrap_or(DiagnosticSeverity::WARNING)
@@ -63,7 +77,6 @@ impl Settings {
         self.inner
             .read()
             .await
-            .lsp
             .up_to_date_hint
             .clone()
             .unwrap_or_else(|| "✓".to_string())
@@ -73,16 +86,35 @@ impl Settings {
         self.inner
             .read()
             .await
-            .lsp
             .needs_update_hint
             .clone()
             .unwrap_or_else(|| " {}".to_string())
+    }
+
+    pub async fn matches_filename(&self, uri: &Url) -> bool {
+        let Some(filename) = uri
+            .path_segments()
+            .and_then(|mut segments| segments.next_back())
+        else {
+            return false;
+        };
+
+        self.inner
+            .read()
+            .await
+            .files
+            .iter()
+            .any(|matched_filename| matched_filename.as_str() == filename)
     }
 }
 
 // verify the config is a valid severity level
 fn verify_severity(d: &DiagnosticSeverity) -> bool {
     *d >= DiagnosticSeverity::ERROR && *d <= DiagnosticSeverity::HINT
+}
+
+fn default_files() -> Vec<String> {
+    vec!["Cargo.toml".to_string()]
 }
 
 #[derive(Default, Debug, Clone, Deserialize)]
@@ -104,9 +136,6 @@ pub struct LspSettings {
     pub up_to_date_hint: Option<String>,
     #[serde(default)]
     pub needs_update_hint: Option<String>,
-}
-
-#[derive(Default, Debug, Clone, Deserialize)]
-pub struct InnerSettings {
-    lsp: LspSettings,
+    #[serde(default = "default_files")]
+    pub files: Vec<String>,
 }

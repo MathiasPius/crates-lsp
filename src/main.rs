@@ -31,6 +31,10 @@ struct Backend {
 
 impl Backend {
     async fn calculate_diagnostics(&self, url: Url, content: &str) -> Vec<Diagnostic> {
+        if !self.settings.matches_filename(&url).await {
+            return Vec::new();
+        }
+
         if !self.settings.diagnostics().await {
             return Vec::new();
         }
@@ -147,7 +151,24 @@ impl Backend {
 impl LanguageServer for Backend {
     async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
         if let Some(settings) = params.initialization_options {
-            self.settings.populate_from(settings).await;
+            match self.settings.populate_from(settings).await {
+                Ok(settings) => {
+                    self.client
+                        .log_message(
+                            MessageType::INFO,
+                            format!("crates-lsp configured with settings: {settings:?}"),
+                        )
+                        .await
+                }
+                Err(err) => {
+                    self.client
+                        .log_message(
+                            MessageType::ERROR,
+                            format!("crates-lsp settings could not be parsed: {err:?}"),
+                        )
+                        .await
+                }
+            }
         }
 
         Ok(InitializeResult {
@@ -200,6 +221,14 @@ impl LanguageServer for Backend {
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
+        if !self
+            .settings
+            .matches_filename(&params.text_document.uri)
+            .await
+        {
+            return;
+        }
+
         if let Some(content) = params.content_changes.first() {
             let diagnostics = self
                 .calculate_diagnostics(params.text_document.uri.clone(), &content.text)
@@ -216,6 +245,14 @@ impl LanguageServer for Backend {
     }
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
+        if !self
+            .settings
+            .matches_filename(&params.text_document.uri)
+            .await
+        {
+            return;
+        }
+
         let diagnostics = self
             .calculate_diagnostics(params.text_document.uri.clone(), &params.text_document.text)
             .await;
@@ -230,6 +267,14 @@ impl LanguageServer for Backend {
     }
 
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
+        if !self
+            .settings
+            .matches_filename(&params.text_document_position.text_document.uri)
+            .await
+        {
+            return Ok(None);
+        }
+
         let cursor = params.text_document_position.position;
 
         let Some(dependencies) = self
@@ -311,6 +356,14 @@ impl LanguageServer for Backend {
     }
 
     async fn inlay_hint(&self, params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
+        if !self
+            .settings
+            .matches_filename(&params.text_document.uri)
+            .await
+        {
+            return Ok(None);
+        }
+
         if !self.settings.inlay_hints().await {
             return Ok(None);
         }
@@ -415,6 +468,14 @@ impl LanguageServer for Backend {
     }
 
     async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
+        if !self
+            .settings
+            .matches_filename(&params.text_document.uri)
+            .await
+        {
+            return Ok(None);
+        }
+
         let mut response = CodeActionResponse::new();
         for d in params
             .context
