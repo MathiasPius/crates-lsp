@@ -12,7 +12,7 @@
   vim.lsp.config['crates'] = {
     cmd = { 'crates-lsp' },
     filetypes = { 'toml' },
-    root_markers = { 'Crates.toml', '.git' },
+    root_markers = { 'Cargo.toml', '.git' },
     init_options = {
       lsp = {
         inlay_hints = false
@@ -29,7 +29,7 @@
   vim.lsp.config['crates'] = {
     cmd = { 'crates-lsp' },
     filetypes = { 'toml' },
-    root_markers = { 'Crates.toml', '.git' },
+    root_markers = { 'Cargo.toml', '.git' },
     init_options = {
       inlay_hints = false
     }
@@ -49,7 +49,7 @@
   vim.lsp.config['crates'] = {
     cmd = { 'crates-lsp' },
     filetypes = { 'toml' },
-    root_markers = { 'Crates.toml', '.git' },
+    root_markers = { 'Cargo.toml', '.git' },
     init_options = {
       files = { 'Cargo.toml', 'AlternativeCargoFilename.toml']
     }

@@ -30,7 +30,7 @@ In most cases, these require `crates-lsp` to be available in your `$PATH`, or fo
 vim.lsp.config['crates'] = {
   cmd = { 'crates-lsp' },
   filetypes = { 'toml' },
-  root_markers = { 'Crates.toml', '.git' },
+  root_markers = { 'Cargo.toml', '.git' },
   init_options = {
     -- Configuration options go here
   }
