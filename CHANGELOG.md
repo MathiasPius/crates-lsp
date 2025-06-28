@@ -1,5 +1,10 @@
 # Change Log
 
+## 0.4.0
+
+### Breaking
+* All configuration options now use `snake_case` (previously `camelCase`, but I forget why and all the documentation already assumed `snake_case` 🤷)
+
 ## 0.3.0
 
 ### Breaking
