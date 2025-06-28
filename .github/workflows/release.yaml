@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Install stable toolchain
         uses: actions-rs/toolchain@v1
@@ -44,7 +44,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout main branch
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Install stable toolchain
         uses: actions-rs/toolchain@v1
@@ -59,18 +59,19 @@ jobs:
           command: test
           args: --all-features
 
-  tag:
-    name: Tag & Publish
+  new-release:
+    name: Check if new release
+    continue-on-error: true
     needs: [lint, test]
     permissions:
       contents: write
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
-      tag: ${{ steps.crate-version.outputs.version }}
+      version: ${{ steps.crate-version.outputs.version }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Crate Version
         id: crate-version
@@ -90,6 +91,37 @@ jobs:
           script: |
             core.setFailed('Tag already exists')
 
+  # This is just to ensure that there is actually a changelog entry
+  create-draft-release:
+    needs: [new-release]
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/create-gh-release-action@v1
+        with:
+          draft: true
+          changelog: "./CHANGELOG.md"
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: "refs/tags/v${{ needs.new-release.outputs.version }}"
+
+  # Build and push to crates.io (to verify correctness) before tagging and creating the release.
+  publish:
+    name: Publish to crates.io
+    needs: [new-release, create-draft-release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
       - name: Publish crate to crates.io
         uses: katyo/publish-crates@v2
         with:
@@ -102,23 +134,24 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           tag_prefix: "v"
-          custom_tag: ${{ steps.crate-version.outputs.version }}
+          custom_tag: ${{ needs.new-release.outputs.version }}
 
+  # Create the release for real.
   create-release:
-    needs: tag
+    needs: [new-release, publish]
     permissions:
       contents: write
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: taiki-e/create-gh-release-action@v1
         with:
           changelog: "./CHANGELOG.md"
           token: ${{ secrets.GITHUB_TOKEN }}
-          ref: "refs/tags/v${{needs.tag.outputs.tag}}"
+          ref: "refs/tags/v${{ needs.new-release.outputs.version }}"
 
   upload-assets:
-    needs: [tag, create-release]
+    needs: [create-release]
     permissions:
       contents: write
     strategy:
@@ -138,10 +171,10 @@ jobs:
             os: windows-latest
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: taiki-e/upload-rust-binary-action@v1
         with:
           bin: crates-lsp
           target: ${{ matrix.target }}
           token: ${{ secrets.GITHUB_TOKEN }}
-          ref: "refs/tags/v${{needs.tag.outputs.tag}}"
+          ref: "refs/tags/v${{ needs.new-release.outputs.version }}"
