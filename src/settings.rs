@@ -132,7 +132,6 @@ fn default_files() -> Vec<String> {
 }
 
 #[derive(Default, Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct LspSettings {
     #[serde(default)]
     pub use_api: Option<bool>,
