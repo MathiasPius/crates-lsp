@@ -94,6 +94,7 @@ jobs:
 
   # This is just to ensure that there is actually a changelog entry
   create-draft-release:
+    name: Check presence of CHANGELOG.md entry
     needs: [new-release]
     permissions:
       contents: write
@@ -139,6 +140,7 @@ jobs:
 
   # Create the release for real.
   create-release:
+    name: Create GitHub release
     needs: [new-release, publish]
     permissions:
       contents: write
@@ -152,6 +154,7 @@ jobs:
           ref: "refs/tags/v${{ needs.new-release.outputs.version }}"
 
   upload-assets:
+    name: Upload binaries
     needs: [create-release]
     permissions:
       contents: write
