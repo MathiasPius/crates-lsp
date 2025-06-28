@@ -88,13 +88,13 @@ jobs:
         with:
           tag: v${{ steps.crate-version.outputs.version }}
 
-      - name: Fail if tag already exists
-        if: ${{ steps.check-tag.outputs.exists == 'true' }}
-        run: |
-          gh run cancel ${{ github.run_id }}
-          gh run watch ${{ github.run_id }}
-        env:
-          GH_TOKEN: ${{ secrets. GITHUB_TOKEN }}
+      # - name: Fail if tag already exists
+      #   if: ${{ steps.check-tag.outputs.exists == 'true' }}
+      #   run: |
+      #     gh run cancel ${{ github.run_id }}
+      #     gh run watch ${{ github.run_id }}
+      #   env:
+      #     GH_TOKEN: ${{ secrets. GITHUB_TOKEN }}
 
   # This is just to ensure that there is actually a changelog entry
   create-draft-release:
