@@ -50,13 +50,15 @@ impl Default for CrateApi {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use crate::crates::{api::CrateApi, cache::CrateCache, CrateLookup};
 
     #[tokio::test]
     async fn get_common_crates() {
         let api = CrateApi::default();
 
-        let cache = CrateCache::default();
+        let cache = CrateCache::new(PathBuf::from("/tmp/crates-lsp")).await;
 
         let versions = api
             .fetch_versions(cache, &["serde", "log", "tracing", "crate-does-not-exist"])

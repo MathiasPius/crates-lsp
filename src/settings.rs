@@ -1,5 +1,6 @@
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
+use directories::ProjectDirs;
 use reqwest::Url;
 use serde::Deserialize;
 use tokio::sync::RwLock;
@@ -91,6 +92,19 @@ impl Settings {
             .unwrap_or_else(|| " {}".to_string())
     }
 
+    pub async fn cache_directory(&self) -> PathBuf {
+        self.inner
+            .read()
+            .await
+            .cache_directory
+            .clone()
+            .unwrap_or_else(|| {
+                ProjectDirs::from("", "", "crates-lsp")
+                    .map(|dir| dir.cache_dir().to_owned())
+                    .unwrap_or(PathBuf::from(".crates-lsp"))
+            })
+    }
+
     pub async fn matches_filename(&self, uri: &Url) -> bool {
         let Some(filename) = uri
             .path_segments()
@@ -138,4 +152,6 @@ pub struct LspSettings {
     pub needs_update_hint: Option<String>,
     #[serde(default = "default_files")]
     pub files: Vec<String>,
+    #[serde(default)]
+    pub cache_directory: Option<PathBuf>,
 }

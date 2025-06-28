@@ -1,6 +1,6 @@
 [package]
 name = "crates-lsp"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 keywords = ["crates", "cargo", "lsp"]
 description = "Language Server Protocol implementation for Cargo.toml manifests."
@@ -22,6 +22,8 @@ reqwest = { version = "0.12.12", default-features = false, features = [
     "socks",
     "rustls-tls-webpki-roots",
 ] }
+
+directories = "6.0.0"
 
 [dev-dependencies]
 indoc = "2"

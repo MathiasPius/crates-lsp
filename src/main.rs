@@ -171,6 +171,11 @@ impl LanguageServer for Backend {
             }
         }
 
+        // Replace the cache directory with the
+        self.cache
+            .change_directory(self.settings.cache_directory().await)
+            .await;
+
         Ok(InitializeResult {
             server_info: Some(ServerInfo {
                 name: "crates-lsp".to_string(),

@@ -76,13 +76,15 @@ impl Default for CrateIndex {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use crate::crates::{cache::CrateCache, sparse::CrateIndex, CrateLookup};
 
     #[tokio::test]
     async fn get_common_crates() {
         let api = CrateIndex::default();
 
-        let cache = CrateCache::default();
+        let cache = CrateCache::new(PathBuf::from("/tmp/crates-lsp")).await;
 
         let versions = api
             .fetch_versions(cache, &["serde", "log", "tracing", "crate-does-not-exist"])

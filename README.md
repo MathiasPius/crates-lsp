@@ -57,6 +57,7 @@ See [Lsp](https://neovim.io/doc/user/lsp.html) section of the Neovim wiki, if yo
 
 | Option    | Type   | Default | Description |
 |-----------|--------|---------|-------------|
+| `cache_directory` | `string/path` | OS-specific `crates-lsp` cache directory | Directory in which to cache information about available crate versions, to avoid constantly querying crates.io. Uses the OS-specific cache directory. See [directories-rs](https://codeberg.org/dirs/directories-rs) |
 | `files` | `[string]` | `["Cargo.toml"]` | List of exact filenames for which `crates-lsp` should provide feedback. Avoids `crates-lsp` throwing errors if you happen to open a `toml` file with a `[dependencies]` section, which does not contain Rust package names. |
 | `use_api` | `bool` | `false` | If true, uses the [Crates API](https://crates.io/data-access#api) instead of the [Crate Index](https://crates.io/data-access#crate-index). There are almost no reasons to ever enable this, and doing so puts a lot more strain on the services provided by crates.io. Please don't! |
 | `inlay_hints` | `bool` | `true` | If false, disables inlay hints. |

@@ -1,5 +1,22 @@
 # Change Log
 
+## 0.3.0
+
+### Breaking
+
+* Now uses the OS-specific standards for cached data:
+  * Linux: `$XDG_CACHE_HOME/crates-lsp` or `$HOME/.cache/crates-lsp`
+  * macOS: `$HOME/Library/Caches/crates-lsp`
+  * Windows: `{FOLDERID_LocalAppData}\crates-lsp\cache`
+
+  Previously a `.crates-lsp` directory within the current workspace was used, but this was a leftover from when the Lapce Editor was the primary target of this language server.
+
+  See [directories-rs](https://codeberg.org/dirs/directories-rs) for more information.
+
+### Added
+
+* Added `cache_directory` configuration option for overriding the defaults.
+
 ## 0.2.0
 
 ### Breaking
