@@ -12,6 +12,7 @@ jobs:
   lint:
     name: Linting (rustfmt + clippy)
     permissions:
+      contents: read
       checks: write
     runs-on: ubuntu-latest
     steps:
@@ -42,6 +43,8 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout main branch
         uses: actions/checkout@v4
@@ -64,7 +67,8 @@ jobs:
     continue-on-error: true
     needs: [lint, test]
     permissions:
-      contents: write
+      contents: read
+      actions: write
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
@@ -113,6 +117,8 @@ jobs:
     name: Publish to crates.io
     needs: [new-release, create-draft-release]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
