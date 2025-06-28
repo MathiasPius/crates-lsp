@@ -1,5 +1,8 @@
 # Change Log
 
+## 0.4.1
+* Hopefully fixed the build pipeline.
+
 ## 0.4.0
 
 ### Breaking
