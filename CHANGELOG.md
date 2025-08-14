@@ -1,5 +1,11 @@
 # Change Log
 
+## 0.4.2
+
+### Fixed
+
+* Update transient dependencies
+
 ## 0.4.1
 * Hopefully fixed the build pipeline.
 
