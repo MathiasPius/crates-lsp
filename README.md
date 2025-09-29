@@ -39,9 +39,13 @@ vim.lsp.config['crates'] = {
 
 ### [Helix](https://helix-editor.com/)
 ```toml
-[language-servers.crates-lsp]
+[language-server.crates-lsp]
+command = "crates-lsp"
 except-features = ["format"]
 # config = {} # Configuration options go here
+
+[language-server.taplo]
+config = {}
 
 [[language]]
 name = "toml"
