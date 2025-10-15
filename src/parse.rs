@@ -142,7 +142,7 @@ impl<'a> Line<'a> {
         use Line::*;
         let mut state = Start;
 
-        for (i, c) in line.chars().enumerate() {
+        for (i, c) in line.char_indices() {
             state = match state {
                 Complete { .. } | Partial { .. } => break,
                 Start => {

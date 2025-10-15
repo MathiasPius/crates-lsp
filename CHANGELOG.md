@@ -2,7 +2,13 @@
 
 ## 0.4.3
 
-Enabled optimization options [#22](https://github.com/MathiasPius/crates-lsp/issues/22) by [zamazan4ik](https://github.com/zamazan4ik)
+### Added
+
+* Enabled optimization options [#22](https://github.com/MathiasPius/crates-lsp/issues/22) by [zamazan4ik](https://github.com/zamazan4ik)
+
+### Fixed
+
+* Fix character indexing bug in Cargo.toml parser
 
 ## 0.4.2
 
