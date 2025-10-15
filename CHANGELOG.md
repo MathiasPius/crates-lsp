@@ -1,5 +1,9 @@
 # Change Log
 
+## 0.4.3
+
+Enabled optimization options [#22](https://github.com/MathiasPius/crates-lsp/issues/22) by [zamazan4ik](https://github.com/zamazan4ik)
+
 ## 0.4.2
 
 ### Fixed
