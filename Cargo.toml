@@ -1,12 +1,10 @@
 [package]
 name = "crates-lsp"
-version = "0.4.2"
+version = "0.4.3"
 edition = "2021"
 keywords = ["crates", "cargo", "lsp"]
 description = "Language Server Protocol implementation for Cargo.toml manifests."
 license = "MIT"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 tokio = { version = "1.44.2", features = ["rt", "macros", "io-std"] }
@@ -27,3 +25,7 @@ directories = "6.0.0"
 
 [dev-dependencies]
 indoc = "2"
+
+[profile.release]
+codegen-units = 1
+lto = true
