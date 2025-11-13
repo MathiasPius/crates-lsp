@@ -3,7 +3,7 @@ use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
-use tokio::sync::RwLock;
+use tokio::{fs, sync::RwLock};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Fetch {
@@ -47,12 +47,13 @@ impl CrateCache {
         cache
     }
     pub async fn change_directory(&self, directory: PathBuf) {
-        std::fs::create_dir_all(&directory).unwrap_or_else(|_| {
+        fs::create_dir_all(&directory).await.unwrap_or_else(|_| {
             panic!("Failed to create crates-lsp cache directory: {directory:?}")
         });
 
         // This directory might be within a git repository, so make sure it is ignored.
-        std::fs::write(directory.join(".gitignore"), "*")
+        fs::write(directory.join(".gitignore"), "*")
+            .await
             .expect("failed to create crates-lsp .gitignore file.");
 
         *self.directory.write().await = directory
@@ -68,7 +69,8 @@ impl CrateCache {
         };
 
         // Attempt to load crate informtion from file cache.
-        if let Ok(content) = std::fs::read_to_string(self.directory.read().await.join(crate_name)) {
+        if let Ok(content) = fs::read_to_string(self.directory.read().await.join(crate_name)).await
+        {
             if let Ok(fetch) = serde_json::from_str::<Fetch>(&content) {
                 if OffsetDateTime::now_utc() < fetch.expires_at {
                     self.put(crate_name, fetch.version.clone(), fetch.expires_at)
@@ -93,10 +95,11 @@ impl CrateCache {
             expires_at,
         };
 
-        std::fs::write(
+        fs::write(
             self.directory.read().await.join(crate_name),
             serde_json::to_string(&fetch).as_deref().unwrap_or("{}"),
         )
+        .await
         .unwrap();
 
         self.crates
